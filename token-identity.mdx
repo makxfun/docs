@@ -1,0 +1,68 @@
+---
+title: "Token Identity"
+description: "How Makx uses ENS subdomains to give every token an on-chain identity."
+---
+
+Every token launched through Makx gets an ENS subdomain automatically. This gives each token a human-readable name, on-chain metadata, and a permanent web address — no backend required.
+
+## How it works
+
+When you launch a token called `PEPE`, the factory registers `pepe.makx.eth` (or the chain equivalent) and writes all metadata as ENS text records. The result:
+
+| Chain | Subdomain | URL |
+|---|---|---|
+| Ethereum | `pepe.makx.eth` | `makx.fun/pepe` |
+| Base | `pepe.makx.base.eth` | `makx.fun/pepe` |
+| BNB Chain | `pepe.makx.bnb` | `makx.fun/pepe` |
+
+Since tickers are unique on the launchpad, there can only ever be one `pepe.makx.eth`.
+
+## What's stored on-chain
+
+Every token's ENS subdomain includes these text records:
+
+### Standard records
+
+| Key | Description |
+|---|---|
+| `avatar` | Logo/image URL (supports IPFS and NFT references) |
+| `description` | Project description |
+| `url` | Website URL |
+| `com.twitter` | Twitter/X handle |
+| `org.telegram` | Telegram handle |
+
+### Makx-specific records
+
+| Key | Description |
+|---|---|
+| `name` | Token display name |
+| `io.makx.token.symbol` | Token ticker |
+| `io.makx.token.decimals` | Always `18` |
+| `io.makx.token.totalSupply` | Total supply (no decimals) |
+| `io.makx.token.address` | Token contract address |
+| `io.makx.launchpad.address` | Bonding curve contract address |
+
+The subdomain's ETH address record (`addr(node)`) points to the **token contract**, not the bonding curve.
+
+## Resolving a token
+
+Look up any Makx token using standard ENS resolution:
+
+```javascript
+const node = namehash(`${symbol.toLowerCase()}.makx.eth`)
+
+const tokenAddress = resolver.addr(node)
+const curveAddress = resolver.text(node, "io.makx.launchpad.address")
+const name         = resolver.text(node, "name")
+const description  = resolver.text(node, "description")
+const twitter      = resolver.text(node, "com.twitter")
+const telegram     = resolver.text(node, "org.telegram")
+const website      = resolver.text(node, "url")
+const avatar       = resolver.text(node, "avatar")
+```
+
+This works in any ENS-compatible wallet, explorer, or dApp.
+
+## Updating metadata
+
+After launch, the Makx team (not the token creator) can update text records via `updateRecord()` or `updateRecords()` on the `TokenENS` contract. Subdomain ownership can also be transferred for token team handoffs.

@@ -1,0 +1,123 @@
+---
+title: "Prepool"
+description: "Community-pooled launches with lifelong fee sharing."
+---
+
+Prepool is Makx's answer to unfair launches. Instead of one dev buying first and dumping later, a community pools ETH together and everyone enters at the same price. The LP stays locked in the contract, earning fees for contributors indefinitely.
+
+## Contributing
+
+Send ETH to join a prepool before it deploys:
+
+```solidity
+function contribute(address to) external payable
+```
+
+The `to` parameter lets you contribute on behalf of another address. Each contribution must meet the prepool's `minContribution` threshold (if set).
+
+You can contribute multiple times — amounts stack.
+
+## Expiry deadline
+
+Every prepool has an expiry deadline (`deployTime`). If the prepool is not deployed before this time, it's considered expired and anyone can cancel it.
+
+- **Maximum duration:** 7 days from creation
+- **Default:** If no deadline is specified, it defaults to 7 days
+- **Custom:** You can set a shorter deadline, but never longer than 7 days
+
+While the prepool is active, the token symbol is **soft-reserved** — no one else can launch a token with the same ticker. If the prepool expires without deploying, the reservation is released and the symbol becomes available again.
+
+## Deployment conditions
+
+Deployment requires the minimum ETH balance to be reached (if configured). Once met, anyone can call `deploy()` — it's permissionless.
+
+| Condition | How it works |
+|---|---|
+| **Minimum balance** | Total contributions must reach `minBalance` |
+| **Expiry deadline** | The prepool must be deployed before `deployTime` or it expires |
+
+## What happens at deployment
+
+1. The prepool calls `LaunchFactory.createPrepoolLaunch()`
+2. A token and bonding curve are created
+3. **All pooled ETH** buys tokens through the curve — everyone gets the same entry price
+4. **5% of the total token supply** is sent directly to the prepool as a bonus allocation (taken from the LP reserve, not the bonding curve sale)
+5. The prepool snapshots the tokens received from the initial buy as `initialTokenBalance` — the 5% allocation is **not** included in this snapshot
+
+## The 5% token allocation
+
+At deployment, 5% of the total token supply goes directly to the prepool contract. This allocation is separate from the tokens bought with pooled ETH and is only accessible to contributors **after graduation**.
+
+- **Before graduation:** withdrawals are based on `initialTokenBalance` (the bought tokens only). The 5% allocation stays in the contract.
+- **After graduation:** withdrawals are based on the prepool's entire token balance, which includes the 5% allocation plus any tokens that accumulated from fees.
+
+This means contributors who wait for graduation receive a larger share than those who exit early.
+
+## The 48-hour lockup
+
+Tokens are locked for 48 hours after deployment. No withdrawals during this period. This prevents an immediate dump and gives the market time to find a real price.
+
+## Earning fees
+
+After the bonding curve graduates to Uniswap, the Prepool contract collects fees from three sources:
+
+<CardGroup cols={3}>
+  <Card title="Platform fees" icon="percent">
+    Bonding curve trading fees flow to the prepool instead of the factory owner.
+  </Card>
+  <Card title="LP fees" icon="arrow-right-arrow-left">
+    The Uniswap V4 LP position earns standard 0.3% swap fees.
+  </Card>
+  <Card title="Hook fees" icon="webhook">
+    The prepool acts as a V4 hook, capturing 1% of every swap output.
+  </Card>
+</CardGroup>
+
+All ETH fees are split **50/50** between the Makx team and active contributors. Your share is proportional to your contribution relative to the total active pool.
+
+Claim your accumulated fees at any time:
+
+```solidity
+function claimFees() external
+```
+
+Fee accounting uses the Synthetix reward-per-token pattern, so it scales efficiently regardless of contributor count.
+
+## Withdrawing tokens
+
+After the 48-hour lockup, call `withdrawTokens()` to receive your token share.
+
+<Warning>
+Withdrawing tokens **permanently removes you** from future fee earnings. You keep the tokens, but all future fees go to remaining contributors.
+</Warning>
+
+How your share is calculated depends on whether the bonding curve has graduated:
+
+| State | Token share | Includes 5% allocation? |
+|---|---|---|
+| **Before graduation** | `initialTokenBalance × yourContribution / totalContributed` | No |
+| **After graduation** | `currentPrepoolBalance × yourContribution / totalActiveContribution` | Yes |
+
+Before graduation, you receive a share of the initially bought tokens only. After graduation, you receive a share of the prepool's **entire** token balance — including the 5% allocation and any tokens accumulated from fees. The denominator is `totalActiveContribution` (only contributors who haven't withdrawn), so your share stays fair regardless of withdrawal order.
+
+## Cancellation and refunds
+
+A prepool can be cancelled in two ways:
+
+- **By anyone** — if the expiry deadline has passed and the prepool hasn't deployed
+- **By the creator or Makx team** — at any time before deployment
+
+When a prepool is cancelled, its symbol reservation is released (the ticker becomes available for other launches). Every contributor can then call `refund()` to get their full ETH back.
+
+## Token fees
+
+Token-side fees (from the Uniswap LP position) accumulate separately in `accumulatedTokenFees`. Once all contributors have exited the prepool, the Makx team can sweep the remaining token balance via `withdrawTokenFees()`.
+
+## Uniswap V4 hook
+
+The Prepool contract implements `afterSwap` as a Uniswap V4 hook. It captures 1% of every swap output (ETH or tokens) on the graduated pool. This is why `createPrepool` requires a salt that produces an address with the correct hook flag bits:
+
+- Bit 6: `AFTER_SWAP`
+- Bit 2: `AFTER_SWAP_RETURNS_DELTA`
+
+Use `predictPrepoolAddress(salt)` to find a valid salt off-chain.

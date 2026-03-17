@@ -1,0 +1,307 @@
+---
+title: "Technical Reference"
+description: "Contract interfaces, events, and errors for integrators."
+---
+
+## LaunchFactory
+
+Deployed once per chain. Entry point for all token and prepool creation.
+
+### Write functions
+
+<AccordionGroup>
+  <Accordion title="createLaunch">
+    ```solidity
+    function createLaunch(
+        string calldata name,
+        string calldata symbol,
+        bytes32 salt,
+        TokenENS.TokenMetadata calldata meta,
+        uint256 minDevBuyTokens
+    ) external payable returns (address tokenAddr, address curveAddr)
+    ```
+    Deploys a standard launch. Send `msg.value > 0` for an atomic dev buy. `salt` is combined with `msg.sender` for deterministic, front-run-resistant clone addresses.
+  </Accordion>
+  <Accordion title="createPrepool">
+    ```solidity
+    function createPrepool(
+        bytes32 salt,
+        string calldata name,
+        string calldata symbol,
+        TokenENS.TokenMetadata calldata meta,
+        uint256 minBalance,
+        uint256 deployTime,
+        uint256 minContribution
+    ) external payable returns (address prepoolAddr)
+    ```
+    Deploys a Prepool contract. `deployTime` is an expiry deadline — the prepool must deploy before this time or it can be cancelled. Max 7 days; defaults to 7 days if `0`; reverts `InvalidDeployTime` if greater than 7 days. The symbol is soft-reserved until the deadline. The `salt` must produce an address whose lower 14 bits satisfy V4 hook flags (bit 6: `AFTER_SWAP`, bit 2: `AFTER_SWAP_RETURNS_DELTA`). Use `predictPrepoolAddress(salt)` to validate off-chain.
+  </Accordion>
+  <Accordion title="createPrepoolLaunch">
+    ```solidity
+    function createPrepoolLaunch(
+        string calldata name,
+        string calldata symbol,
+        bytes32 curveSalt,
+        TokenENS.TokenMetadata calldata meta
+    ) external payable returns (address tokenAddr, address curveAddr, uint256 tokensOut)
+    ```
+    Called only by a registered Prepool. Deploys token + bonding curve. `prepoolAllocationBps` of supply goes directly to the prepool; the rest to the curve.
+  </Accordion>
+  <Accordion title="setParams (owner)">
+    ```solidity
+    function setParams(
+        uint256 _totalSupply,
+        uint16 _platformFeeBps,       // max 1000 (10%)
+        uint256 _virtualEth,
+        uint256 _virtualTokens,
+        uint256 _salePercentBps,      // 1–10000
+        uint16 _prepoolAllocationBps  // salePercentBps + prepoolAllocationBps ≤ 10000
+    ) external onlyOwner
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### View functions
+
+```solidity
+function predictCurveAddress(bytes32 salt) external view returns (address)
+function predictPrepoolAddress(bytes32 salt) external view returns (address)
+```
+
+### Events
+
+```solidity
+event LaunchCreated(uint256 indexed launchId, address indexed token, address indexed bondingCurve, address creator, string name, string symbol)
+event PrepoolCreated(address indexed prepool, address indexed creator, string symbol)
+event DevBuy(uint256 indexed launchId, address indexed creator, uint256 ethSpent)
+event ParamsUpdated()
+```
+
+### Errors
+
+| Error | Condition |
+|---|---|
+| `SymbolTaken` | Ticker already registered or reserved by active prepool |
+| `InvalidParams` | Bad values in `setParams` |
+| `OnlyPrepool` | `createPrepoolLaunch` called by non-prepool |
+| `InvalidHookAddress` | Salt produces wrong V4 hook flag bits |
+| `InvalidDeployTime` | `deployTime` exceeds 7-day maximum |
+
+---
+
+## BondingCurve
+
+Minimal proxy clone (EIP-1167), one per token. Initialized by the factory.
+
+### Write functions
+
+<AccordionGroup>
+  <Accordion title="buy">
+    ```solidity
+    function buy(address recipient, uint256 minTokensOut, uint256 deadline) external payable returns (uint256 tokensOut)
+    ```
+    Buy tokens with ETH. Auto-graduates if the buy fills the remaining supply.
+  </Accordion>
+  <Accordion title="sell">
+    ```solidity
+    function sell(address recipient, uint256 tokenAmount, uint256 minEthOut, uint256 deadline) external returns (uint256 ethOut)
+    ```
+    Sell tokens back to the curve. Requires token approval. Not callable after graduation.
+  </Accordion>
+  <Accordion title="graduate">
+    ```solidity
+    function graduate() external
+    ```
+    Permissionless. Triggers Uniswap V4 migration if sale is complete. Normally called automatically by the last buy.
+  </Accordion>
+</AccordionGroup>
+
+### View functions
+
+```solidity
+function getPrice() external view returns (uint256)                    // ETH per token (1e18)
+function getBuyQuote(uint256 ethIn) external view returns (uint256)    // tokens out
+function getSellQuote(uint256 tokenAmount) external view returns (uint256)  // ETH out
+function getLaunchInfo() external view returns (address, address, address, uint256)
+```
+
+### Events
+
+```solidity
+event TokensPurchased(address indexed buyer, uint256 ethSpent, uint256 tokensReceived, uint256 newPrice)
+event TokensSold(address indexed seller, uint256 tokensReturned, uint256 ethReceived, uint256 newPrice)
+event Graduated(uint256 ethToPool, uint256 tokensToPool, uint256 lpTokenId)
+```
+
+### Errors
+
+| Error | Condition |
+|---|---|
+| `AlreadyGraduated` | Trade attempted after graduation |
+| `NotGraduated` | Manual `graduate()` before conditions met |
+| `SlippageExceeded` | Output below minimum |
+| `DeadlineExpired` | Transaction too late |
+| `InsufficientTokens` | Selling more than sold supply |
+| `ZeroAmount` | Zero ETH or token amount |
+
+### Pool parameters
+
+| Parameter | Value |
+|---|---|
+| Pool fee | 0.3% (`3000`) |
+| Tick spacing | 60 |
+| Liquidity range | Full range (`-887220` to `887220`) |
+| Pair | ETH (`address(0)`) / token |
+
+---
+
+## Prepool
+
+Minimal proxy clone. Also acts as a Uniswap V4 hook (`afterSwap`).
+
+### Write functions
+
+<AccordionGroup>
+  <Accordion title="contribute">
+    ```solidity
+    function contribute(address to) external payable
+    ```
+    Join the prepool. `to` is the credited address. Reverts if below `minContribution` or already deployed/cancelled.
+  </Accordion>
+  <Accordion title="deploy">
+    ```solidity
+    function deploy(bytes32 curveSalt) external
+    ```
+    Permissionless once conditions are met. Creates the token and bonding curve via the factory.
+  </Accordion>
+  <Accordion title="withdrawTokens">
+    ```solidity
+    function withdrawTokens() external
+    ```
+    Available after 48-hour lockup. Permanently exits fee earnings.
+  </Accordion>
+  <Accordion title="claimFees">
+    ```solidity
+    function claimFees() external
+    ```
+    Claims accumulated ETH fees. Only for active contributors.
+  </Accordion>
+  <Accordion title="cancel">
+    ```solidity
+    function cancel() external
+    ```
+    Anyone can cancel if the expiry deadline (`deployTime`) has passed. Creator or Makx team can cancel anytime before deployment. Releases the symbol reservation via `LaunchFactory.releaseSymbol()`.
+  </Accordion>
+  <Accordion title="refund">
+    ```solidity
+    function refund() external
+    ```
+    Returns full contribution after cancellation.
+  </Accordion>
+  <Accordion title="collectLPFees">
+    ```solidity
+    function collectLPFees(address positionManager) external
+    ```
+    Collects fees from the Uniswap V4 LP position. ETH fees distributed 50/50. Token fees accumulate for Makx team.
+  </Accordion>
+  <Accordion title="distributeAccumulatedFees">
+    ```solidity
+    function distributeAccumulatedFees() external
+    ```
+    Distributes any undistributed hook fees.
+  </Accordion>
+</AccordionGroup>
+
+### View functions
+
+```solidity
+function earned(address user) external view returns (uint256)  // pending ETH fees
+function canDeploy() external view returns (bool)
+```
+
+### Events
+
+```solidity
+event Contributed(address indexed contributor, uint256 amount, uint256 totalContributed)
+event Deployed(address indexed token, address indexed bondingCurve, uint256 ethUsed)
+event TokensWithdrawn(address indexed contributor, uint256 tokenAmount)
+event FeesClaimed(address indexed contributor, uint256 amount)
+event Cancelled()
+event Refunded(address indexed contributor, uint256 amount)
+event FeesReceived(uint256 amount)
+event TokenFeesWithdrawn(address indexed recipient, uint256 amount)
+```
+
+### Errors
+
+| Error | Condition |
+|---|---|
+| `AlreadyDeployed` | Action not valid after deployment |
+| `NotDeployed` | Action requires deployment first |
+| `AlreadyCancelled` | Already cancelled |
+| `NotCancelled` | Refund before cancellation |
+| `BelowMinContribution` | Below minimum |
+| `DeployConditionsNotMet` | Conditions not satisfied |
+| `TokensLocked` | 48-hour lockup active |
+| `AlreadyWithdrawn` | Already exited |
+| `NoContribution` | No contribution found |
+| `CannotCancel` | Not authorized |
+| `ContributorsStillActive` | `withdrawTokenFees` while contributors remain |
+| `NotMigrated` | `withdrawTokenFees` before graduation |
+
+---
+
+## TokenENS
+
+Deployed once per chain. Wraps ENS Registry and Public Resolver.
+
+### Write functions
+
+<AccordionGroup>
+  <Accordion title="registerToken (factory only)">
+    ```solidity
+    function registerToken(
+        address tokenAddress,
+        address bondingCurveAddress,
+        string calldata label,
+        string calldata name,
+        string calldata symbol,
+        string calldata totalSupply,
+        TokenMetadata calldata meta
+    ) external onlyAuthorized
+    ```
+  </Accordion>
+  <Accordion title="updateRecord / updateRecords (owner)">
+    ```solidity
+    function updateRecord(address tokenAddress, string calldata key, string calldata value) external onlyOwner
+    function updateRecords(address tokenAddress, string[] calldata keys, string[] calldata values) external onlyOwner
+    ```
+  </Accordion>
+  <Accordion title="transferSubdomain (owner)">
+    ```solidity
+    function transferSubdomain(address tokenAddress, address newOwner) external onlyOwner
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Structs
+
+```solidity
+struct TokenMetadata {
+    string avatar;
+    string description;
+    string comTwitter;
+    string comTelegram;
+    string url;
+}
+```
+
+### Errors
+
+| Error | Condition |
+|---|---|
+| `NotOwner` | Non-owner called `onlyOwner` function |
+| `NotAuthorized` | Non-owner and non-factory called `onlyAuthorized` |
+| `TokenNotRegistered` | Update on unregistered token |
+| `LengthMismatch` | Mismatched array lengths in `updateRecords` |
+| `SubdomainTaken` | Duplicate registration |

@@ -1,97 +1,34 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "What is Makx?"
+description: "A meme token launchpad with fair launches, automatic DEX migration, and on-chain identity."
 ---
 
-## Setting up
+Makx is a meme token launchpad built on Uniswap V4. Creators launch tokens with a bonding curve that automatically migrates liquidity to Uniswap once the token sells out — no manual steps, no rug pulls.
 
-Get your documentation site up and running in minutes.
+Every token gets a unique ENS subdomain (like `pepe.makx.eth`), making it discoverable on-chain without a backend.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+## Two ways to launch
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Standard Launch" icon="rocket">
+    A single creator deploys a token. They can buy first in the same transaction — sniper-proof. Once all tokens sell, liquidity moves to Uniswap and the LP is locked forever.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Prepool Launch" icon="users">
+    A group of people pool ETH before the token exists. Everyone enters at the same price. The LP stays in the Prepool contract, earning trading fees for contributors — forever.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
-  </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What makes it different
 
-Everything you need to create world-class documentation.
+- **No rugs** — LP is either burned (standard) or locked in a contract (prepool). Nobody can pull liquidity.
+- **Fair entry** — Dev buys happen atomically. Prepool launches give everyone the same price.
+- **On-chain identity** — Token metadata lives in ENS records, not a database.
+- **Automatic graduation** — When the bonding curve sells out, Uniswap liquidity is created in the same transaction.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Supported chains
 
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+| Chain | ENS Parent | DEX |
+|---|---|---|
+| Ethereum | `makx.eth` | Uniswap V4 |
+| Base | `makx.base.eth` | Uniswap V4 |
+| BNB Chain | `makx.bnb` | Uniswap V4 (BNB) |

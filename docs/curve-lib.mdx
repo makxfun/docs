@@ -1,0 +1,95 @@
+---
+title: "CurveLib"
+description: "Pure math library for the constant-product bonding curve with virtual reserves."
+---
+
+## Overview
+
+`CurveLib` is an internal Solidity library used by `BondingCurve`. It implements the constant-product AMM math with virtual reserves (pump.fun style). All functions are `pure` — no state reads or writes.
+
+## Deployment Addresses
+
+Library functions are inlined at compile time — `CurveLib` has no separate deployment address.
+
+---
+
+## Invariant
+
+```
+(virtualEth + ethRaised) * (virtualTokens - tokensSold) = k
+```
+
+Where `k = virtualEth * virtualTokens` (set at initialization).
+
+**Spot price** at any point: `ethReserve / tokenReserve`
+
+**Initial price**: `virtualEth / virtualTokens`
+
+## Functions
+
+### getTokensForEth
+
+```solidity
+function getTokensForEth(
+    uint256 ethReserve,
+    uint256 tokenReserve,
+    uint256 ethIn
+) internal pure returns (uint256 tokensOut)
+```
+
+Calculates tokens received for a given ETH input.
+
+```
+tokensOut = tokenReserve * ethIn / (ethReserve + ethIn)
+```
+
+### getCostForTokens
+
+```solidity
+function getCostForTokens(
+    uint256 ethReserve,
+    uint256 tokenReserve,
+    uint256 tokenAmount
+) internal pure returns (uint256 cost)
+```
+
+Calculates ETH cost to purchase a specific number of tokens. Reverts if `tokenAmount >= tokenReserve`.
+
+```
+cost = ethReserve * tokenAmount / (tokenReserve - tokenAmount)
+```
+
+### getRefundForTokens
+
+```solidity
+function getRefundForTokens(
+    uint256 ethReserve,
+    uint256 tokenReserve,
+    uint256 tokenAmount
+) internal pure returns (uint256 ethOut)
+```
+
+Calculates ETH received for selling tokens back.
+
+```
+ethOut = ethReserve * tokenAmount / (tokenReserve + tokenAmount)
+```
+
+### getCurrentPrice
+
+```solidity
+function getCurrentPrice(
+    uint256 ethReserve,
+    uint256 tokenReserve
+) internal pure returns (uint256 price)
+```
+
+Returns the current spot price in wei, scaled to 1e18.
+
+```
+price = ethReserve * 1e18 / tokenReserve
+```
+
+## Precision
+
+All division uses OpenZeppelin's `Math.mulDiv` for full-precision `(a * b) / c` without intermediate overflow.

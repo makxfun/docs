@@ -1,0 +1,125 @@
+---
+title: "BondingCurve"
+description: "Per-token AMM trading engine using a constant-product curve with virtual reserves. Auto-graduates to Uniswap V4."
+---
+
+## Overview
+
+The `BondingCurve` contract is the trading engine for every Makx token. Each token gets its own bonding curve — a minimal proxy clone (EIP-1167) initialized by the factory. It controls buying and selling before graduation, then automatically migrates liquidity to Uniswap V4 when all tokens are sold.
+
+## Deployment Addresses
+
+Implementation contract (clones are created per-token by LaunchFactory):
+
+| Network | Address |
+|---------|---------|
+| Ethereum | Coming soon |
+| Base | Coming soon |
+| BNB Chain | Coming soon |
+| Sepolia | Coming soon |
+
+---
+
+## Curve Mathematics
+
+Uses a **constant-product AMM** (pump.fun style) with virtual reserves:
+
+```
+price = ethReserve / tokenReserve
+
+ethReserve   = virtualEth  + ethRaised
+tokenReserve = virtualTokens - tokensSold
+```
+
+`virtualEth` and `virtualTokens` are set by the factory and define the initial price floor. Only `salePercentBps` of the total supply is available on the curve; the rest is reserved for the Uniswap LP.
+
+Math is implemented in [CurveLib](/docs/curve-lib).
+
+## Write Functions
+
+<AccordionGroup>
+  <Accordion title="buy">
+    ```solidity
+    function buy(address recipient, uint256 minTokensOut, uint256 deadline) external payable returns (uint256 tokensOut)
+    ```
+    Buy tokens with ETH. Deducts platform fee (sent immediately to `feeRecipient`), calculates output via constant product, transfers tokens to `recipient`. Auto-graduates if `tokensSold >= maxTokensForSale` after the buy. Excess ETH is refunded if the buy would overshoot the graduation limit.
+  </Accordion>
+  <Accordion title="sell">
+    ```solidity
+    function sell(address recipient, uint256 tokenAmount, uint256 minEthOut, uint256 deadline) external returns (uint256 ethOut)
+    ```
+    Sell tokens back to the curve. Requires token approval. Platform fee is sent immediately to `feeRecipient`. Not callable after graduation.
+  </Accordion>
+  <Accordion title="graduate">
+    ```solidity
+    function graduate() external
+    ```
+    Permissionless. Triggers Uniswap V4 migration if sale is complete. Normally called automatically by the last buy.
+  </Accordion>
+</AccordionGroup>
+
+## View Functions
+
+```solidity
+function getPrice() external view returns (uint256)                    // ETH per token (1e18)
+function getBuyQuote(uint256 ethIn) external view returns (uint256)    // tokens out
+function getSellQuote(uint256 tokenAmount) external view returns (uint256)  // ETH out
+function getLaunchInfo() external view returns (address, address, address, uint256)
+```
+
+## Key State
+
+```solidity
+IERC20  public token;
+uint256 public totalSupply;
+uint16  public platformFeeBps;
+uint256 public virtualEth;
+uint256 public virtualTokens;
+uint256 public maxTokensForSale;  // salePercentBps of totalSupply
+
+uint256 public tokensSold;
+uint256 public ethRaised;
+bool    public graduated;
+
+address public lpRecipient;    // dead address (normal) or prepool address (prepool)
+address public poolHook;       // address(0) (normal) or prepool address (prepool)
+address public feeRecipient;   // receives platform fees immediately at trade time
+```
+
+## Events
+
+```solidity
+event TokensPurchased(address indexed buyer, uint256 ethSpent, uint256 tokensReceived, uint256 newPrice)
+event TokensSold(address indexed seller, uint256 tokensReturned, uint256 ethReceived, uint256 newPrice)
+event Graduated(uint256 ethToPool, uint256 tokensToPool, uint256 lpTokenId)
+```
+
+## Errors
+
+| Error | Condition |
+|---|---|
+| `AlreadyGraduated` | Trade attempted after graduation |
+| `NotGraduated` | Manual `graduate()` before conditions met |
+| `SlippageExceeded` | Output below minimum |
+| `DeadlineExpired` | Transaction too late |
+| `InsufficientTokens` | Selling more than sold supply |
+| `ZeroAmount` | Zero ETH or token amount |
+| `TransferFailed` | ETH transfer failed |
+| `AlreadyInitialized` | Clone already initialized |
+| `NotInitialized` | Clone not yet initialized |
+
+## Pool Parameters
+
+| Parameter | Value |
+|---|---|
+| Pool fee | 0.3% (`3000`) |
+| Tick spacing | 60 |
+| Liquidity range | Full range (`-887220` to `887220`) |
+| Pair | ETH (`address(0)`) / token |
+
+## Platform Fees
+
+Platform fees are sent **immediately** at trade time to `feeRecipient`. There is no accumulated balance to claim.
+
+- For **normal launches**: `feeRecipient` is the factory owner.
+- For **prepool launches**: `feeRecipient` is the prepool contract, which distributes them 50/50 to makxTeam and contributors.

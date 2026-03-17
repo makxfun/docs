@@ -1,0 +1,109 @@
+---
+title: "TokenENS"
+description: "On-chain identity — registers ENS subdomains and metadata for every launched token."
+---
+
+## Overview
+
+`TokenENS` is deployed once per chain. It wraps the ENS Registry and Public Resolver to register a subdomain (e.g. `pepe.makx.eth`) for every token launched through the factory. All token metadata — name, symbol, social links, contract addresses — is stored as ENS text records, queryable without a backend.
+
+## Deployment Addresses
+
+| Network | Address |
+|---------|---------|
+| Ethereum | Coming soon |
+| Base | Coming soon |
+| BNB Chain | Coming soon |
+| Sepolia | Coming soon |
+
+---
+
+## Write Functions
+
+<AccordionGroup>
+  <Accordion title="registerToken (factory only)">
+    ```solidity
+    function registerToken(
+        address tokenAddress,
+        address bondingCurveAddress,
+        string calldata label,
+        string calldata name,
+        string calldata symbol,
+        string calldata totalSupply,
+        TokenMetadata calldata meta
+    ) external onlyAuthorized
+    ```
+    Registers a new ENS subdomain for the token. Creates the subnode, sets the resolver, sets the ETH address record, and batch-writes all text records via multicall. Only callable by factory or owner.
+  </Accordion>
+  <Accordion title="updateRecord (owner)">
+    ```solidity
+    function updateRecord(address tokenAddress, string calldata key, string calldata value) external onlyOwner
+    ```
+    Updates a single ENS text record for a registered token.
+  </Accordion>
+  <Accordion title="updateRecords (owner)">
+    ```solidity
+    function updateRecords(address tokenAddress, string[] calldata keys, string[] calldata values) external onlyOwner
+    ```
+    Batch-updates multiple ENS text records via multicall.
+  </Accordion>
+  <Accordion title="transferSubdomain (owner)">
+    ```solidity
+    function transferSubdomain(address tokenAddress, address newOwner) external onlyOwner
+    ```
+    Transfers ENS subdomain ownership to a new address.
+  </Accordion>
+  <Accordion title="setFactory (owner)">
+    ```solidity
+    function setFactory(address _factory) external onlyOwner
+    ```
+    Sets the authorized factory address.
+  </Accordion>
+</AccordionGroup>
+
+## Structs
+
+```solidity
+struct TokenMetadata {
+    string avatar;       // logo/avatar image URL or IPFS/NFT ref
+    string description;  // bio or description of the token/project
+    string comTwitter;   // com.twitter → Twitter/X handle
+    string comTelegram;  // org.telegram → Telegram handle
+    string url;          // project website URL
+}
+```
+
+## ENS Text Records
+
+Each token subdomain gets 11 text records set at registration:
+
+| Key | Source |
+|---|---|
+| `avatar` | `meta.avatar` |
+| `description` | `meta.description` |
+| `url` | `meta.url` |
+| `com.twitter` | `meta.comTwitter` |
+| `org.telegram` | `meta.comTelegram` |
+| `name` | Token name |
+| `io.makx.token.symbol` | Token symbol |
+| `io.makx.token.decimals` | `"18"` |
+| `io.makx.token.totalSupply` | Total supply (as string) |
+| `io.makx.token.address` | Token contract address |
+| `io.makx.launchpad.address` | Bonding curve address |
+
+## Events
+
+```solidity
+event TokenRegistered(address indexed tokenAddress, bytes32 indexed node, string label)
+event TokenRecordUpdated(address indexed tokenAddress, string key, string value)
+```
+
+## Errors
+
+| Error | Condition |
+|---|---|
+| `NotOwner` | Non-owner called `onlyOwner` function |
+| `NotAuthorized` | Non-owner and non-factory called `onlyAuthorized` |
+| `TokenNotRegistered` | Update on unregistered token |
+| `LengthMismatch` | Mismatched array lengths in `updateRecords` |
+| `SubdomainTaken` | Duplicate registration |

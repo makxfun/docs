@@ -1,0 +1,126 @@
+---
+title: "LaunchFactory"
+description: "Entry point for all token, bonding curve, and prepool creation. Deployed once per chain."
+---
+
+## Overview
+
+`LaunchFactory` is the single entry point for every Makx launch. It deploys tokens, bonding curves (as EIP-1167 clones), and prepools. It also manages symbol uniqueness and prepool symbol reservations.
+
+## Deployment Addresses
+
+| Network | Address |
+|---------|---------|
+| Ethereum | Coming soon |
+| Base | Coming soon |
+| BNB Chain | Coming soon |
+| Sepolia | Coming soon |
+
+---
+
+## Write Functions
+
+<AccordionGroup>
+  <Accordion title="createLaunch">
+    ```solidity
+    function createLaunch(
+        string calldata name,
+        string calldata symbol,
+        bytes32 salt,
+        TokenENS.TokenMetadata calldata meta,
+        uint256 minDevBuyTokens
+    ) external payable returns (address tokenAddr, address curveAddr)
+    ```
+    Deploys a standard launch (token + bonding curve clone + ENS subdomain). Send `msg.value > 0` for an atomic dev buy. `salt` is combined with `msg.sender` for deterministic, front-run-resistant clone addresses.
+  </Accordion>
+  <Accordion title="createPrepool">
+    ```solidity
+    function createPrepool(
+        bytes32 salt,
+        string calldata name,
+        string calldata symbol,
+        TokenENS.TokenMetadata calldata meta,
+        uint256 minBalance,
+        uint256 deployTime,
+        uint256 minContribution
+    ) external payable returns (address prepoolAddr)
+    ```
+    Deploys a Prepool contract. `deployTime` is an expiry deadline — the prepool must deploy before this time or it can be cancelled. Max 7 days; defaults to 7 days if `0`; reverts `InvalidDeployTime` if greater than 7 days. The symbol is soft-reserved until the deadline. The `salt` must produce an address whose lower 14 bits satisfy V4 hook flags (bit 6: `AFTER_SWAP`, bit 2: `AFTER_SWAP_RETURNS_DELTA`). Use `predictPrepoolAddress(salt)` to validate off-chain.
+  </Accordion>
+  <Accordion title="createPrepoolLaunch">
+    ```solidity
+    function createPrepoolLaunch(
+        string calldata name,
+        string calldata symbol,
+        bytes32 curveSalt,
+        TokenENS.TokenMetadata calldata meta
+    ) external payable returns (address tokenAddr, address curveAddr, uint256 tokensOut)
+    ```
+    Called only by a registered Prepool. Deploys token + bonding curve. `prepoolAllocationBps` of supply goes directly to the prepool; the rest to the curve.
+  </Accordion>
+  <Accordion title="setParams (owner)">
+    ```solidity
+    function setParams(
+        uint256 _totalSupply,
+        uint16 _platformFeeBps,       // max 1000 (10%)
+        uint256 _virtualEth,
+        uint256 _virtualTokens,
+        uint256 _salePercentBps,      // 1–10000
+        uint16 _prepoolAllocationBps  // salePercentBps + prepoolAllocationBps ≤ 10000
+    ) external onlyOwner
+    ```
+    Updates launch parameters. Only affects future launches.
+  </Accordion>
+  <Accordion title="setTokenENS (owner)">
+    ```solidity
+    function setTokenENS(TokenENS _tokenENS) external onlyOwner
+    ```
+    Sets the TokenENS registrar address.
+  </Accordion>
+  <Accordion title="releaseSymbol">
+    ```solidity
+    function releaseSymbol(string calldata symbol) external
+    ```
+    Called by a prepool on cancellation to release its soft symbol reservation.
+  </Accordion>
+</AccordionGroup>
+
+## View Functions
+
+```solidity
+function predictCurveAddress(bytes32 salt) external view returns (address)
+function predictPrepoolAddress(bytes32 salt) external view returns (address)
+```
+
+Both include `msg.sender` in the salt derivation, so the predicted address is caller-specific.
+
+## Key State
+
+```solidity
+uint256 public launchCount;
+mapping(uint256 => LaunchInfo) public launches;
+mapping(address => uint256) public tokenToLaunchId;
+mapping(address => bool) public isBondingCurve;
+mapping(address => bool) public isPrepool;
+mapping(bytes32 => bool) public symbolTaken;
+mapping(bytes32 => uint256) public symbolReservedUntil;
+```
+
+## Events
+
+```solidity
+event LaunchCreated(uint256 indexed launchId, address indexed token, address indexed bondingCurve, address creator, string name, string symbol)
+event PrepoolCreated(address indexed prepool, address indexed creator, string symbol)
+event DevBuy(uint256 indexed launchId, address indexed creator, uint256 ethSpent)
+event ParamsUpdated()
+```
+
+## Errors
+
+| Error | Condition |
+|---|---|
+| `SymbolTaken` | Ticker already registered or reserved by active prepool |
+| `InvalidParams` | Bad values in `setParams` |
+| `OnlyPrepool` | `createPrepoolLaunch` called by non-prepool |
+| `InvalidHookAddress` | Salt produces wrong V4 hook flag bits |
+| `InvalidDeployTime` | `deployTime` exceeds 7-day maximum |

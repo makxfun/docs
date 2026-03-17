@@ -1,0 +1,40 @@
+---
+title: "LaunchToken"
+description: "Minimal ERC20 token deployed by LaunchFactory. Entire supply minted to recipient at construction."
+---
+
+## Overview
+
+`LaunchToken` is a minimal ERC20 (OpenZeppelin) with no extra logic. The entire supply is minted to a single recipient at construction — the bonding curve for standard launches, or the factory (which splits between curve and prepool) for prepool launches.
+
+There are no mint, burn, pause, or access-control functions. Once deployed, the token is a plain ERC20.
+
+## Deployment Addresses
+
+No standalone deployment — a new `LaunchToken` is created via `new LaunchToken(...)` inside `LaunchFactory.createLaunch()` and `LaunchFactory.createPrepoolLaunch()` for each launch.
+
+| Network | Factory Address |
+|---------|----------------|
+| Ethereum | Coming soon |
+| Base | Coming soon |
+| BNB Chain | Coming soon |
+| Sepolia | Coming soon |
+
+---
+
+## Constructor
+
+```solidity
+constructor(
+    string memory name_,
+    string memory symbol_,
+    uint256 totalSupply_,
+    address recipient_
+) ERC20(name_, symbol_)
+```
+
+Mints `totalSupply_` to `recipient_`. No other state or logic.
+
+## Interface
+
+Standard [ERC20](https://eips.ethereum.org/EIPS/eip-20) — `transfer`, `approve`, `transferFrom`, `balanceOf`, `allowance`, `totalSupply`, `name`, `symbol`, `decimals` (18).

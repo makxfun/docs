@@ -1,0 +1,85 @@
+---
+title: "Trading"
+description: "How buying, selling, and price discovery work on the Makx bonding curve."
+---
+
+Every Makx token trades on its own bonding curve before graduating to Uniswap. The curve is a constant-product AMM (similar to pump.fun) that sets the price automatically based on supply and demand.
+
+## Buying
+
+Send ETH to `buy()` and receive tokens. The price depends on how many tokens have already been sold — early buyers pay less.
+
+```solidity
+function buy(
+    address recipient,
+    uint256 minTokensOut,  // slippage protection
+    uint256 deadline       // reverts if expired
+) external payable returns (uint256 tokensOut)
+```
+
+A platform fee is deducted from your ETH before the swap. If your buy would exceed the remaining supply, the curve sells you what's left and refunds the excess ETH (with the fee adjusted proportionally).
+
+## Selling
+
+Sell tokens back to the curve for ETH at any time before graduation.
+
+```solidity
+function sell(
+    address recipient,
+    uint256 tokenAmount,
+    uint256 minEthOut,  // slippage protection
+    uint256 deadline
+) external returns (uint256 ethOut)
+```
+
+You need to approve the bonding curve to spend your tokens first. A platform fee is deducted from the ETH output.
+
+<Warning>Selling is not available after graduation. Once the token moves to Uniswap, trade there instead.</Warning>
+
+## Price quotes
+
+Check prices before trading:
+
+| Function | Returns |
+|---|---|
+| `getPrice()` | Current spot price (ETH per token, scaled to 1e18) |
+| `getBuyQuote(ethIn)` | Tokens you'd receive for a given ETH amount (after fee) |
+| `getSellQuote(tokenAmount)` | ETH you'd receive for a given token amount (after fee) |
+
+## How the price curve works
+
+The bonding curve uses virtual reserves to set a price floor:
+
+```
+price = ethReserve / tokenReserve
+
+ethReserve   = virtualEth + ethRaised
+tokenReserve = virtualTokens - tokensSold
+```
+
+`virtualEth` and `virtualTokens` are configured by the factory. Only a portion of the total supply (`salePercentBps`) is available on the curve — the rest is reserved for the Uniswap LP at graduation.
+
+## Graduation
+
+When `tokensSold >= maxTokensForSale`, the token graduates. This usually happens automatically on the last buy, but anyone can also call `graduate()` manually.
+
+Graduation creates a Uniswap V4 pool:
+- **Pool fee:** 0.3%
+- **Tick spacing:** 60
+- **Liquidity range:** Full range (`-887220` to `887220`)
+- **Pair:** ETH / token
+
+The LP position goes to either:
+- **Dead address** (standard launch) — locked forever
+- **Prepool contract** (prepool launch) — earns fees for contributors
+
+## Slippage and deadlines
+
+Both `buy()` and `sell()` accept slippage protection (`minTokensOut` / `minEthOut`) and a deadline timestamp. If the output would be below your minimum or the deadline has passed, the transaction reverts.
+
+| Error | Meaning |
+|---|---|
+| `SlippageExceeded` | Output below your minimum |
+| `DeadlineExpired` | Transaction submitted too late |
+| `AlreadyGraduated` | Token has moved to Uniswap |
+| `ZeroAmount` | ETH or token amount is zero |
