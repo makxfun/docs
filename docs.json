@@ -39,6 +39,13 @@
       }
     ]
   },
+  "navbar": {
+    "primary": {
+      "type": "button",
+      "label": "Launch App",
+      "href": "https://makx.io"
+    }
+  },
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
@@ -57,9 +64,9 @@
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "x": "https://x.com/makxprotocol",
+      "github": "https://github.com/maxfun",
+      "telegram": "https://t.me/makxprotocol"
     }
   }
 }
