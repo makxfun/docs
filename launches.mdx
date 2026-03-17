@@ -72,3 +72,9 @@ Both bonding curves and prepools use `CREATE2` clones, so their addresses are pr
 Every token symbol is registered once, globally. If someone launches `PEPE`, no one else can launch another `PEPE` on the same chain. The factory reverts with `SymbolTaken` on duplicates.
 
 For prepools, the symbol is **soft-reserved** until the expiry deadline. If the prepool expires without deploying, the reservation is released and the ticker becomes available again.
+
+---
+
+## Agent launches
+
+There's a third way to launch: let an AI do it. [Agent Launchers](/agent-launcher) are autonomous agents that monitor social feeds, detect trending memes, and call `createLaunch()` automatically. The agent stakes ETH as the dev buy and promotes the token in Makx Social Feeds — all without human intervention.

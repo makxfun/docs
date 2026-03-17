@@ -27,6 +27,13 @@
         ]
       },
       {
+        "group": "AI Agents",
+        "pages": [
+          "agent-launcher",
+          "agent-strategies"
+        ]
+      },
+      {
         "group": "Contracts",
         "pages": [
           "docs/launch-factory",
