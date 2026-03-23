@@ -1,0 +1,298 @@
+---
+title: "Domains Frontend Guide"
+description: "Resolve .makx names, look up token info, and display verified token data using viem."
+---
+
+## Contract Addresses
+
+All contracts are deployed to the same addresses on both **Base** and **BSC**:
+
+| Contract | Address |
+|----------|---------|
+| ENSRegistry | `0xce3830A628674C67e35294128F638dDC9c69d8f8` |
+| MakxRegistrar | `0x62b26B7e71127AF8bD26b44FB3BF2f17D845A530` |
+| MakxTokenResolver | `0xEcB18a27D37a289AA5A9721f8F28c879E894E2F3` |
+| MakxUniversalResolver | `0x535aeD7b7Cd80Ed9A0835E1Ed29a99d038B8B777` |
+
+## Viem Setup
+
+.makx domains are compatible with viem and Wagmi ENS queries. There are two ways to configure viem for .makx resolution.
+
+### Option 1: Per-Call Universal Resolver Address
+
+If your app also queries other ENS domains besides .makx, pass the `universalResolverAddress` directly to each viem ENS method call.
+
+```typescript
+import { createPublicClient, http } from "viem";
+import { normalize } from "viem/ens";
+import { base } from "viem/chains";
+
+const client = createPublicClient({
+  chain: base,
+  transport: http(),
+});
+
+const MAKX_UNIVERSAL_RESOLVER = "0x535aeD7b7Cd80Ed9A0835E1Ed29a99d038B8B777";
+
+const address = await client.getEnsAddress({
+  name: normalize("pepe.makx"),
+  universalResolverAddress: MAKX_UNIVERSAL_RESOLVER,
+});
+
+const description = await client.getEnsText({
+  name: normalize("pepe.makx"),
+  key: "description",
+  universalResolverAddress: MAKX_UNIVERSAL_RESOLVER,
+});
+
+const name = await client.getEnsName({
+  address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+  universalResolverAddress: MAKX_UNIVERSAL_RESOLVER,
+});
+```
+
+All viem ENS methods (`getEnsAddress`, `getEnsText`, `getEnsName`, `getEnsAvatar`, `getEnsResolver`) accept `universalResolverAddress` as a parameter.
+
+### Option 2: Custom makxChain Config (Preferred)
+
+Override the `ensUniversalResolver` address in your chain definition. This directs all ENS calls on the client to use .makx by default.
+
+```typescript
+import { createPublicClient, http, type Chain } from "viem";
+import { normalize } from "viem/ens";
+import { base } from "viem/chains";
+
+const makxChain: Chain = {
+  ...base, // or bsc -- same contract addresses on both
+  contracts: {
+    ...base.contracts,
+    ensRegistry: {
+      address: "0xce3830A628674C67e35294128F638dDC9c69d8f8",
+    },
+    ensUniversalResolver: {
+      address: "0x535aeD7b7Cd80Ed9A0835E1Ed29a99d038B8B777",
+    },
+  },
+};
+
+const client = createPublicClient({
+  chain: makxChain,
+  transport: http(),
+});
+
+// All ENS calls now resolve against .makx
+const address = await client.getEnsAddress({ name: normalize("pepe.makx") });
+```
+
+The examples below assume you have configured viem using the `makxChain` method above.
+
+## Normalizing Names
+
+ENS names prohibit certain characters (e.g. underscore) and have validation rules. Always normalize names with UTS-46 normalization before passing them to any resolution method:
+
+```typescript
+import { normalize } from "viem/ens";
+
+const address = await client.getEnsAddress({
+  name: normalize("pepe.makx"),
+});
+
+const avatar = await client.getEnsAvatar({
+  name: normalize("pepe.makx"),
+});
+```
+
+Use `normalize()` on any user-supplied name before passing it to `getEnsAddress`, `getEnsText`, `getEnsName`, `getEnsAvatar`, or `getEnsResolver`.
+
+## Resolving a .makx Name to a Token Address
+
+```typescript
+const tokenAddress = await client.getEnsAddress({
+  name: normalize("pepe.makx"),
+});
+// => "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984"
+```
+
+The returned address is the token's contract address. This is set at registration and can never change.
+
+## Reading Token Metadata
+
+Use `getEnsText()` to read text records attached to a .makx domain:
+
+```typescript
+// Token name (immutable)
+const name = await client.getEnsText({
+  name: normalize("pepe.makx"),
+  key: "name",
+});
+
+// Token symbol (immutable)
+const symbol = await client.getEnsText({
+  name: normalize("pepe.makx"),
+  key: "symbol",
+});
+
+// Description (mutable -- set by token owner)
+const description = await client.getEnsText({
+  name: normalize("pepe.makx"),
+  key: "description",
+});
+
+// Website
+const website = await client.getEnsText({
+  name: normalize("pepe.makx"),
+  key: "url",
+});
+
+// Avatar
+const avatar = await client.getEnsAvatar({
+  name: normalize("pepe.makx"),
+});
+```
+
+### Text Record Keys
+
+| Key | Mutable | Description |
+|-----|---------|-------------|
+| `name` | No | Token display name |
+| `symbol` | No | Token ticker symbol |
+| `token.symbol` | No | Token ticker symbol |
+| `token.decimals` | No | Token decimals (e.g. "18") |
+| `token.totalSupply` | No | Total supply (as string) |
+| `launchpad.address` | No | Bonding curve / launchpad address |
+| `description` | Yes | Token description |
+| `url` | Yes | Project website |
+| `avatar` | Yes | Avatar image URI |
+| `com.twitter` | Yes | Twitter/X handle |
+| `com.github` | Yes | GitHub organization |
+| `com.discord` | Yes | Discord invite |
+
+Any additional keys set during registration or by the token owner are also queryable. Unset keys return `null`.
+
+## Reverse Resolution (Address to Name)
+
+Look up which .makx domain belongs to a token address:
+
+```typescript
+const name = await client.getEnsName({
+  address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+});
+// => "pepe.makx"
+```
+
+If the address is not a registered Makx token, this returns `null`.
+
+## Finding the Resolver
+
+```typescript
+const resolverAddress = await client.getEnsResolver({
+  name: normalize("pepe.makx"),
+});
+```
+
+All .makx domains share the same `MakxTokenResolver` contract.
+
+## Verifying a Token is from Makx
+
+A token has a valid .makx domain if and only if it was registered through an approved Makx factory. To verify:
+
+```typescript
+async function isMakxToken(tokenAddress: string): Promise<boolean> {
+  const name = await client.getEnsName({ address: tokenAddress });
+  if (!name || !name.endsWith(".makx")) return false;
+
+  // Double-check forward resolution matches
+  const resolved = await client.getEnsAddress({ name: normalize(name) });
+  return resolved?.toLowerCase() === tokenAddress.toLowerCase();
+}
+```
+
+This two-way check confirms:
+1. The address has a .makx reverse record (set only by the registrar)
+2. The forward record resolves back to the same address
+
+## How to compute the domain node (namehash)
+
+When calling methods on the `MakxTokenResolver` contract directly, the view functions take a `node` (bytes32) parameter — compute it with `namehash(normalize("yourticker.makx"))` from `viem/ens`.
+```typescript
+import { namehash, normalize } from "viem/ens";
+const node = namehash(normalize("pepe.makx"));
+```
+
+## Batch Token Info (Direct Contract Call)
+
+
+If you need token address, name, and symbol in a single call, use the `tokenInfo()` function directly on the resolver. 
+
+```typescript
+import { namehash, normalize } from "viem/ens";
+
+const MakxTokenResolverABI = [
+  {
+    inputs: [{ name: "node", type: "bytes32" }],
+    name: "tokenInfo",
+    outputs: [
+      { name: "tokenAddress", type: "address" },
+      { name: "name_", type: "string" },
+      { name: "symbol_", type: "string" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+const node = namehash(normalize("pepe.makx"));
+
+const [tokenAddress, name, symbol] = await client.readContract({
+  address: "0xEcB18a27D37a289AA5A9721f8F28c879E894E2F3",
+  abi: MakxTokenResolverABI,
+  functionName: "tokenInfo",
+  args: [node],
+});
+```
+
+## Checking if a Name Exists
+
+```typescript
+import { namehash, normalize } from "viem/ens";
+
+const MakxTokenResolverABI = [
+  {
+    inputs: [{ name: "node", type: "bytes32" }],
+    name: "exists",
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+const exists = await client.readContract({
+  address: "0xEcB18a27D37a289AA5A9721f8F28c879E894E2F3",
+  abi: MakxTokenResolverABI,
+  functionName: "exists",
+  args: [namehash(normalize("pepe.makx"))],
+});
+```
+
+## Error Handling
+
+```typescript
+try {
+  const address = await client.getEnsAddress({ name: normalize("nonexistent.makx") });
+} catch (error) {
+  // Throws ResolverNotFound if no resolver exists for the name
+  // This means the name has not been registered
+}
+```
+
+Unregistered names will throw a `ResolverNotFound` error from the universal resolver. Wrap resolution calls in try/catch and treat errors as "name does not exist."
+
+## Viem Method Mapping
+
+| Viem Method | Resolver Function | Returns |
+|-------------|------------------|---------|
+| `getEnsAddress({ name })` | `addr(node)` | Token contract address |
+| `getEnsText({ name, key })` | `text(node, key)` | Text record value or `null` |
+| `getEnsAvatar({ name })` | `text(node, "avatar")` | Avatar URI or `null` |
+| `getEnsName({ address })` | `name(reverseNode)` | `.makx` name or `null` |
+| `getEnsResolver({ name })` | `findResolver(name)` | Resolver contract address |

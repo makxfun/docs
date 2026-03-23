@@ -1,109 +1,249 @@
 ---
-title: "TokenENS"
-description: "On-chain identity — registers ENS subdomains and metadata for every launched token."
+title: "Makx Domains"
+description: "On-chain identity system — registers .makx domains and metadata for every launched token."
 ---
 
 ## Overview
 
-`TokenENS` is deployed once per chain. It wraps the ENS Registry and Public Resolver to register a subdomain (e.g. `pepe.makx.eth`) for every token launched through the factory. All token metadata — name, symbol, social links, contract addresses — is stored as ENS text records, queryable without a backend.
+The .makx domain system uses a multi-contract architecture deployed on **Base** and **BSC**. It wraps an ENS Registry with a custom registrar and resolver to register a domain (e.g. `pepe.makx`) for every token launched through an approved factory. All token metadata — name, symbol, social links, contract addresses — is stored on-chain, queryable without a backend.
 
-## Deployment Addresses
+## Deployed Addresses
 
-| Network | Address |
-|---------|---------|
-| Ethereum | Coming soon |
-| Base | Coming soon |
-| BNB Chain | Coming soon |
-| Sepolia | Coming soon |
+All contracts are deployed to the same addresses on both chains.
+
+| Contract | Address |
+|----------|---------|
+| ENSRegistry | `0xce3830A628674C67e35294128F638dDC9c69d8f8` |
+| MakxRegistrar | `0x62b26B7e71127AF8bD26b44FB3BF2f17D845A530` |
+| MakxTokenResolver | `0xEcB18a27D37a289AA5A9721f8F28c879E894E2F3` |
+| MakxUniversalResolver | `0x535aeD7b7Cd80Ed9A0835E1Ed29a99d038B8B777` |
+| DummyGatewayProvider | `0xD47c1dF7F311355fD7B7F3ea67Bbb2110B3e6E05` |
 
 ---
 
-## Write Functions
+## MakxRegistrar
+
+Orchestrator contract that coordinates between the ENS registry and the token resolver during registration. Manages which factories are authorized.
+
+### Write Functions
 
 <AccordionGroup>
-  <Accordion title="registerToken (factory only)">
+  <Accordion title="register (factory only)">
     ```solidity
-    function registerToken(
-        address tokenAddress,
-        address bondingCurveAddress,
-        string calldata label,
-        string calldata name,
-        string calldata symbol,
-        string calldata totalSupply,
-        TokenMetadata calldata meta
-    ) external onlyAuthorized
+    function register(RegistrationRequest calldata req) external returns (bytes32 node)
     ```
-    Registers a new ENS subdomain for the token. Creates the subnode, sets the resolver, sets the ETH address record, and batch-writes all text records via multicall. Only callable by factory or owner.
+    Registers a new `.makx` domain for a token. Atomically creates the ENS subnode, sets the resolver, stores immutable token data, writes initial text records, and creates the reverse record. Only callable by approved factories.
+
+    **RegistrationRequest struct:**
+    ```solidity
+    struct RegistrationRequest {
+        string label;           // Subdomain label (e.g. "uniswap" for uniswap.makx)
+        address owner;          // Address that can edit mutable metadata
+        address tokenAddress;   // Token contract address (permanent)
+        string name;            // Token display name (permanent)
+        string symbol;          // Token ticker symbol (permanent)
+        string[] keys;          // Initial text record keys
+        string[] values;        // Initial text record values (paired with keys)
+    }
+    ```
   </Accordion>
-  <Accordion title="updateRecord (owner)">
+  <Accordion title="addFactory (owner)">
     ```solidity
-    function updateRecord(address tokenAddress, string calldata key, string calldata value) external onlyOwner
+    function addFactory(address factory) external onlyOwner
     ```
-    Updates a single ENS text record for a registered token.
+    Adds an approved factory that can register tokens.
   </Accordion>
-  <Accordion title="updateRecords (owner)">
+  <Accordion title="removeFactory (owner)">
     ```solidity
-    function updateRecords(address tokenAddress, string[] calldata keys, string[] calldata values) external onlyOwner
+    function removeFactory(address factory) external onlyOwner
     ```
-    Batch-updates multiple ENS text records via multicall.
+    Removes a factory from the approved list.
   </Accordion>
-  <Accordion title="transferSubdomain (owner)">
+  <Accordion title="setResolver (owner, once)">
     ```solidity
-    function transferSubdomain(address tokenAddress, address newOwner) external onlyOwner
+    function setResolver(address _resolver) external onlyOwner
     ```
-    Transfers ENS subdomain ownership to a new address.
-  </Accordion>
-  <Accordion title="setFactory (owner)">
-    ```solidity
-    function setFactory(address _factory) external onlyOwner
-    ```
-    Sets the authorized factory address.
+    Sets the MakxTokenResolver address. Can only be called once.
   </Accordion>
 </AccordionGroup>
 
-## Structs
+### Registration Errors
 
-```solidity
-struct TokenMetadata {
-    string avatar;       // logo/avatar image URL or IPFS/NFT ref
-    string description;  // bio or description of the token/project
-    string comTwitter;   // com.twitter → Twitter/X handle
-    string comTelegram;  // org.telegram → Telegram handle
-    string url;          // project website URL
-}
-```
+| Error | Cause |
+|-------|-------|
+| `NotFactory()` | Caller is not an approved factory |
+| `ResolverNotSet()` | `setResolver()` has not been called |
+| `NameAlreadyRegistered(string label)` | Label is already taken |
+| `RecordAlreadyExists(bytes32 node)` | Node already has a record in the resolver |
 
-## ENS Text Records
+---
 
-Each token subdomain gets 11 text records set at registration:
+## MakxTokenResolver
 
-| Key | Source |
-|---|---|
-| `avatar` | `meta.avatar` |
-| `description` | `meta.description` |
-| `url` | `meta.url` |
-| `com.twitter` | `meta.comTwitter` |
-| `org.telegram` | `meta.comTelegram` |
-| `name` | Token name |
-| `io.makx.token.symbol` | Token symbol |
-| `io.makx.token.decimals` | `"18"` |
-| `io.makx.token.totalSupply` | Total supply (as string) |
-| `io.makx.token.address` | Token contract address |
-| `io.makx.launchpad.address` | Bonding curve address |
+Data store and ENS resolver. Stores all token data and implements standard ENS resolver interfaces for client compatibility.
 
-## Events
+### Write Functions
 
-```solidity
-event TokenRegistered(address indexed tokenAddress, bytes32 indexed node, string label)
-event TokenRecordUpdated(address indexed tokenAddress, string key, string value)
-```
+<AccordionGroup>
+  <Accordion title="setText (node owner)">
+    ```solidity
+    function setText(bytes32 node, string calldata key, string calldata value) external
+    ```
+    Updates a mutable text record. Reverts with `ImmutableField(key)` if the key is `name` or `symbol`.
+  </Accordion>
+  <Accordion title="setContenthash (node owner)">
+    ```solidity
+    function setContenthash(bytes32 node, bytes calldata hash) external
+    ```
+    Sets or updates the content hash (IPFS/Swarm) for a token's domain.
+  </Accordion>
+  <Accordion title="transferOwnership (node owner)">
+    ```solidity
+    function transferOwnership(bytes32 node, address newOwner) external
+    ```
+    Transfers metadata editing rights to a new address.
+  </Accordion>
+</AccordionGroup>
 
-## Errors
+### View Functions
 
-| Error | Condition |
-|---|---|
-| `NotOwner` | Non-owner called `onlyOwner` function |
-| `NotAuthorized` | Non-owner and non-factory called `onlyAuthorized` |
-| `TokenNotRegistered` | Update on unregistered token |
-| `LengthMismatch` | Mismatched array lengths in `updateRecords` |
-| `SubdomainTaken` | Duplicate registration |
+<AccordionGroup>
+  <Accordion title="addr(bytes32 node) -> address">
+    ```solidity
+    function addr(bytes32 node) external view returns (address payable)
+    ```
+    Returns the token contract address for a .makx name. Returns `address(0)` if the node has no record.
+
+    **Interface:** `IAddrResolver` (0x3b3b57de)
+  </Accordion>
+  <Accordion title="addr(bytes32 node, uint256 coinType) -> bytes">
+    ```solidity
+    function addr(bytes32 node, uint256 coinType) external view returns (bytes memory)
+    ```
+    Returns the address for a given coin type per ENSIP-9. Coin type 60 = Ethereum. Returns empty bytes for unsupported coin types.
+
+    **Interface:** `IAddressResolver` (0xf1cb7e06)
+  </Accordion>
+  <Accordion title="text(bytes32 node, string key) -> string">
+    ```solidity
+    function text(bytes32 node, string calldata key) external view returns (string memory)
+    ```
+    Returns a text record value. Returns an empty string for unset keys.
+
+    **Interface:** `ITextResolver` (0x59d1d43c)
+  </Accordion>
+  <Accordion title="contenthash(bytes32 node) -> bytes">
+    ```solidity
+    function contenthash(bytes32 node) external view returns (bytes memory)
+    ```
+    Returns the content hash (IPFS/Swarm) for the node. Returns empty bytes if not set.
+
+    **Interface:** `IContentHashResolver` (0xbc1c58d1)
+  </Accordion>
+  <Accordion title="name(bytes32 node) -> string">
+    ```solidity
+    function name(bytes32 node) external view returns (string memory)
+    ```
+    Returns the name for a reverse record node.
+
+    **Interface:** `INameResolver` (0x691f3431)
+  </Accordion>
+  <Accordion title="tokenInfo(bytes32 node) -> (address, string, string)">
+    ```solidity
+    function tokenInfo(bytes32 node) external view returns (
+        address tokenAddress,
+        string memory name_,
+        string memory symbol_
+    )
+    ```
+    Returns all immutable token data in one call. More gas-efficient than calling `addr()`, `text("name")`, and `text("symbol")` separately.
+  </Accordion>
+  <Accordion title="exists(bytes32 node) -> bool">
+    ```solidity
+    function exists(bytes32 node) external view returns (bool)
+    ```
+    Returns whether a token record exists for the given node.
+  </Accordion>
+  <Accordion title="ownerOf(bytes32 node) -> address">
+    ```solidity
+    function ownerOf(bytes32 node) external view returns (address)
+    ```
+    Returns the address that can edit mutable records for this node.
+  </Accordion>
+  <Accordion title="supportsInterface(bytes4 interfaceId) -> bool">
+    ```solidity
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool)
+    ```
+    ERC-165 interface detection. Supports: `IAddrResolver`, `IAddressResolver`, `ITextResolver`, `IContentHashResolver`, `INameResolver`, `IERC165`.
+  </Accordion>
+</AccordionGroup>
+
+### Resolver Errors
+
+| Error | Cause |
+|-------|-------|
+| `Unauthorized()` | Caller is not the node's metadata owner |
+| `RecordNotFound(bytes32 node)` | No token registered at this node |
+| `ImmutableField(string key)` | Attempted to modify `name` or `symbol` |
+| `OnlyRegistrar()` | Non-registrar called `register()` or `setName()` |
+
+### Text Records
+
+Each token domain gets these text records set at registration:
+
+| Key | Mutable | Description |
+|-----|---------|-------------|
+| `name` | No | Token display name |
+| `symbol` | No | Token ticker symbol |
+| `token.symbol` | No | Token ticker symbol |
+| `token.decimals` | No | Token decimals (e.g. "18") |
+| `token.totalSupply` | No | Total supply (as string) |
+| `launchpad.address` | No | Bonding curve / launchpad address |
+| `description` | Yes | Token description |
+| `url` | Yes | Project website |
+| `avatar` | Yes | Avatar image URI |
+| `com.twitter` | Yes | Twitter/X handle |
+| `com.github` | Yes | GitHub organization |
+| `com.discord` | Yes | Discord invite |
+
+### Events
+
+| Event | Emitted When |
+|-------|-------------|
+| `TokenRegistered(bytes32 indexed node, address indexed tokenAddress, string name, string symbol)` | New token registered |
+| `AddrChanged(bytes32 indexed node, address a)` | Address set (at registration) |
+| `TextChanged(bytes32 indexed node, string indexed indexedKey, string key, string value)` | Text record created or updated |
+| `ContenthashChanged(bytes32 indexed node, bytes hash)` | Content hash updated |
+| `NameChanged(bytes32 indexed node, string name)` | Reverse record set |
+| `OwnerChanged(bytes32 indexed node, address indexed newOwner)` | Metadata ownership transferred |
+
+---
+
+## MakxUniversalResolver
+
+Enables standard viem/ethers.js ENS methods to work with .makx domains. You generally don't call it directly — configure it as `ensUniversalResolver` in your chain config and use standard ENS methods.
+
+<AccordionGroup>
+  <Accordion title="resolve(bytes name, bytes data) -> (bytes, address)">
+    Forward resolution. Encodes a DNS-formatted name and resolver calldata.
+  </Accordion>
+  <Accordion title="reverse(bytes lookupAddress, uint256 coinType) -> (string, address, address, address)">
+    Reverse resolution. Returns the name associated with an address.
+  </Accordion>
+  <Accordion title="findResolver(bytes name) -> (address, bytes32, uint256)">
+    Walks the ENS tree to find the resolver for a given name. Returns the resolver address, the namehash, and the offset in the name where the resolver was found.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Access Control
+
+| Role | Held By | Can Do |
+|------|---------|--------|
+| **Registrar Owner** | Deployer (EOA or multisig) | Add/remove factories, set resolver (once) |
+| **Factory** | Approved contracts | Register new tokens |
+| **Registrar** | MakxRegistrar contract | Create ENS nodes, initialize resolver records |
+| **Node Owner** | Address specified at registration | Edit mutable text records, contenthash, transfer ownership |
+
+The registrar permanently owns all ENS nodes. Token metadata owners cannot change the resolver pointer or transfer the ENS node itself — they can only modify mutable text records, contenthash, and transfer their edit rights.

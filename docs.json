@@ -41,6 +41,8 @@
           "docs/prepool",
           "docs/launch-token",
           "docs/token-ens",
+          "docs/makx-domains-frontend",
+          "docs/makx-domains-contracts",
           "docs/curve-lib"
         ]
       }
