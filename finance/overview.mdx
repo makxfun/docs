@@ -1,0 +1,61 @@
+---
+title: "makx.finance — Lending & Yield Overview"
+description: "Deposit ETH into the Makx Yield Vault, earn interest as your capital is rented to meme coin launches."
+---
+
+## What is makx.finance?
+
+makx.finance is the DeFi lending side of the Makx protocol. The Makx Yield Vault accepts ETH deposits and lends that ETH to token launches on makx.io as `bondAmount` — the base liquidity that backs each pool.
+
+In return, the vault earns continuous per-second interest paid by MakxYieldPad on all outstanding bonds. That interest raises the share price of METH — the vault's ERC-20 share token.
+
+---
+
+## METH — Makx ETH
+
+When you deposit ETH into the Makx Yield Vault, you receive **METH** (Makx ETH) shares. METH is a standard ERC-20 token that represents your proportional claim on vault assets.
+
+As token launches pay rent (which flows to the vault as interest), `totalAssets` increases and the ETH value of each METH share rises.
+
+```
+sharePrice = totalAssets × 1e18 / totalSupply
+totalAssets = idle ETH balance + totalBondedETH
+```
+
+METH is a **yield-bearing token** — you don't need to stake or claim separately. Simply holding METH means your ETH is earning yield.
+
+---
+
+## Revenue source
+
+| Source | How it flows |
+|--------|-------------|
+| Rental interest from launches | YieldPad accrues per-second interest on all bonded ETH and pushes it to the vault via `collectInterest()`. Raises vault `totalAssets`. |
+| LP trading fees | Go to token creators, not the vault directly. |
+| Hook swap fees | Go to token creators, not the vault directly. |
+
+The vault's single source of yield is **interest from lending ETH to token launches**. No staking, no governance incentives, no emissions.
+
+---
+
+## Principal safety
+
+Your ETH principal (the `bondAmount` portion) is mathematically guaranteed to be recoverable:
+
+- The vault is the only ETH liquidity provider at each launch.
+- Buyers must deposit ETH to receive tokens; sellers must return tokens to receive ETH.
+- On liquidation or bond repayment, the vault always recovers at least `bondAmount`.
+
+See [Yield Mechanics](/finance/yield-mechanics) for the full explanation.
+
+---
+
+## Getting started
+
+1. Go to [makx.finance](https://makx.finance)
+2. Connect your wallet
+3. Deposit ETH → receive METH shares
+4. METH appreciates as interest accrues
+5. When you want out: request withdrawal → wait for cooldown → redeem METH for ETH
+
+See [Deposit & Withdraw](/finance/deposit-withdraw) for details.

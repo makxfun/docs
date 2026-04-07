@@ -1,0 +1,61 @@
+---
+title: "Trading"
+description: "Trade meme coins on makx.io — Uniswap V4 pools with real liquidity from block one."
+---
+
+## Trading on makx.io
+
+All Makx-launched tokens trade on Uniswap V4 immediately at launch. There is no bonding curve phase, no pre-launch presale, and no migration. The pool is live from the first block.
+
+---
+
+## Pool structure
+
+Each launch creates a Uniswap V4 ETH/token pool with:
+
+- **Full-range liquidity** — The LP position spans the entire tick range (tick-min to tick-max). There are no liquidity cliffs or dead zones. Tokens are always tradeable at any price.
+- **0.3% LP fee** — Fixed per pool. Goes entirely to liquidity providers.
+- **Hook fee** — Set by the token creator (up to `maxHookFeeBps`). Applied on every ETH swap on top of the LP fee.
+
+---
+
+## Fee layers
+
+When you buy or sell a Makx token, two fees apply:
+
+| Fee | Direction | Who receives it |
+|-----|-----------|----------------|
+| LP fee (0.3%) | Both directions | Liquidity providers |
+| Hook fee (creator-set) | ETH side only | Token creator (minus protocol cut) |
+
+**ETH → Token:** Hook fee is deducted from your ETH input before the swap reaches the pool. The pool sees `ethIn - hookFee`.
+
+**Token → ETH:** Hook fee is deducted from the ETH output. You receive `ethOut - hookFee`.
+
+The hook fee rate is visible on-chain via `launches[launchId].hookFeeBps`.
+
+---
+
+## Liquidity depth
+
+The depth of the pool is determined by `bondAmount` — the ETH rented from the vault at launch. A creator who chose a larger market cap target rented more ETH, resulting in a deeper pool.
+
+Because the LP is full-range and all 1 billion tokens enter the pool at launch, every token is immediately tradeable with real liquidity depth.
+
+---
+
+## External liquidity
+
+Anyone can add their own LP position to a Makx token pool. External liquidity only helps — it deepens the pool, reduces price impact, and absorbs sell pressure. It has no effect on the vault's bond recovery mechanism because Uniswap V4 positions are independent NFTs.
+
+---
+
+## What happens to the pool when rent expires
+
+If a creator stops paying rent and the launch is liquidated:
+1. The LP NFT is withdrawn — the vault reclaims its ETH.
+2. All pool tokens go to the liquidator.
+
+Trading on any remaining external LP positions is unaffected by the protocol's liquidation. The Uniswap pool itself is not destroyed.
+
+See [Token Lifecycle](/launchpad/token-lifecycle) and [Liquidations](/launchpad/liquidations).

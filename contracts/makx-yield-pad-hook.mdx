@@ -1,0 +1,108 @@
+---
+title: "MakxYieldPadHook"
+description: "Contract reference for MakxYieldPadHook — the stateless Uniswap V4 hook that collects swap fees per pool."
+---
+
+## Overview
+
+`MakxYieldPadHook` is a stateless Uniswap V4 hook attached to every pool created by MakxYieldPad. Its sole purpose is to intercept swaps and route the creator's hook fee to YieldPad.
+
+It holds **no funds** and no rental state. All fee accounting is done in YieldPad via `recordHookFee()`.
+
+---
+
+## Immutables
+
+| Variable | Description |
+|----------|-------------|
+| `poolManager` | Uniswap V4 PoolManager |
+| `yieldPad` | MakxYieldPad — source of pool config, receiver of fees |
+
+---
+
+## Hook flags
+
+```
+BEFORE_SWAP                (0x80)
+AFTER_SWAP                 (0x40)
+BEFORE_SWAP_RETURNS_DELTA  (0x08)
+AFTER_SWAP_RETURNS_DELTA   (0x04)
+
+Required address suffix: 0xCC
+```
+
+The hook address must end in `0xCC` for the Uniswap V4 router to recognize and enforce the required flags.
+
+---
+
+## Fee architecture
+
+Two independent fee layers per pool:
+
+**LP fee** — Fixed per pool (`fee: 3000` = 0.3%), overridden on every swap via `OVERRIDE_FEE_FLAG`. Goes entirely to liquidity providers. Never changes for a given pool.
+
+**Hook fee** — Flat bps set by the token creator (`hookFeeBps`). Applied to ETH on every swap. Routed to YieldPad and accrued in `launchFeeBalance`, claimable by the creator.
+
+---
+
+## `beforeSwap` — ETH → Token swaps
+
+```solidity
+function beforeSwap(
+    address,
+    PoolKey calldata key,
+    SwapParams calldata params,
+    bytes calldata
+) external returns (bytes4, BeforeSwapDelta, uint24)
+```
+
+Triggered on every swap. For `ETH → token` exact-input swaps (`zeroForOne = true`, `amountSpecified < 0`):
+
+1. Reads `hookFeeBps` from YieldPad via `getPoolConfig(poolId)`.
+2. Calculates `fee = -amountSpecified × hookFeeBps / 10_000`.
+3. Returns a `BeforeSwapDelta` that reduces the ETH sent to the pool by `fee`.
+4. Calls `poolManager.take(ETH, yieldPad, fee)` — transfers the fee directly to YieldPad.
+5. Calls `yieldPad.recordHookFee(poolId, fee)` — YieldPad credits it to `launchFeeBalance`.
+
+The pool only sees `ethIn - hookFee`. The LP fee applies to the reduced input.
+
+---
+
+## `afterSwap` — Token → ETH swaps
+
+```solidity
+function afterSwap(
+    address,
+    PoolKey calldata key,
+    SwapParams calldata params,
+    BalanceDelta delta,
+    bytes calldata
+) external returns (bytes4, int128)
+```
+
+For `token → ETH` swaps (`zeroForOne = false`):
+
+1. Reads `hookFeeBps` from YieldPad.
+2. Calculates `fee = delta.amount0() × hookFeeBps / 10_000` (where `amount0` is positive ETH output).
+3. Returns a negative `afterSwapDelta` reducing the ETH the swapper receives by `fee`.
+4. Calls `poolManager.take(ETH, yieldPad, fee)`.
+5. Calls `yieldPad.recordHookFee(poolId, fee)`.
+
+---
+
+## Pool currency convention
+
+All Makx pools use:
+- `currency0 = address(0)` (native ETH) — always sorted first
+- `currency1 = ERC-20 token address`
+
+ETH is always the "specified" or "output" side depending on swap direction. The hook always takes its fee from the ETH side.
+
+---
+
+## What the hook does NOT do
+
+- Does not hold ETH or tokens.
+- Does not track rental state or `prepaidUntil`.
+- Does not restrict who can swap.
+- Does not implement `beforeInitialize`, `afterInitialize`, `beforeAddLiquidity`, `afterAddLiquidity`, `beforeRemoveLiquidity`, `afterRemoveLiquidity`, `beforeDonate`, or `afterDonate` — all revert with `HookNotImplemented`.

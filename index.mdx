@@ -1,37 +1,44 @@
 ---
-title: "What is Makx?"
-description: "A meme token launchpad with fair launches, automatic DEX migration, and on-chain identity."
+title: "Makx Protocol"
+description: "Bridging memes and DeFi — liquidity rental launchpad and ETH yield on Uniswap V4."
 ---
 
-Makx is a meme token launchpad built on Uniswap V4. Creators launch tokens with a bonding curve that automatically migrates liquidity to Uniswap once the token sells out — no manual steps, no rug pulls.
+## What is Makx?
 
-Every token gets a unique ENS subdomain (like `pepe.makx.eth`), making it discoverable on-chain without a backend.
+Makx is a two-sided DeFi protocol that connects meme coin creators with yield-seeking ETH holders. Token launches get real, deep liquidity from day one. Yield farmers put their ETH to work earning interest. The two sides are united by a single mechanism: **liquidity rental**.
 
-## Three ways to launch
-
-<CardGroup cols={3}>
-  <Card title="Standard Launch" icon="rocket">
-    A single creator deploys a token. They can buy first in the same transaction — sniper-proof. Once all tokens sell, liquidity moves to Uniswap and the LP is locked forever.
+<CardGroup cols={2}>
+  <Card title="makx.io — Launchpad" icon="rocket" href="/launchpad/overview">
+    Launch meme tokens on Uniswap V4 with rented liquidity. Trade from block one, no bonding curve, no migration.
   </Card>
-  <Card title="Prepool Launch" icon="users">
-    A group of people pool ETH before the token exists. Everyone enters at the same price. The LP stays in the Prepool contract, earning trading fees for contributors — forever.
-  </Card>
-  <Card title="Agent Launch" icon="robot" href="/agent-launcher">
-    Deploy an AI agent that monitors social feeds for trending memes and launches coins autonomously. Your agent detects, launches, and promotes — 24/7, no manual intervention.
+  <Card title="makx.finance — Lending & Yield" icon="building-columns" href="/finance/overview">
+    Deposit ETH into the Makx Yield Vault, earn interest as liquidity is rented to token launches.
   </Card>
 </CardGroup>
 
-## What makes it different
+---
 
-- **No rugs** — LP is either burned (standard) or locked in a contract (prepool). Nobody can pull liquidity.
-- **Fair entry** — Dev buys happen atomically. Prepool launches give everyone the same price.
-- **On-chain identity** — Token metadata lives in ENS records, not a database.
-- **Automatic graduation** — When the bonding curve sells out, Uniswap liquidity is created in the same transaction.
+## How it works in one sentence
 
-## Supported chains
+Token creators **rent ETH liquidity** from the vault for their Uniswap V4 pool; the vault **earns interest** on that ETH; yield farmers hold vault shares (METH) that appreciate as interest accumulates.
 
-| Chain | ENS Parent | DEX |
-|---|---|---|
-| Ethereum | `makx.eth` | Uniswap V4 |
-| Base | `makx.base.eth` | Uniswap V4 |
-| BNB Chain | `makx.bnb` | Uniswap V4 (BNB) |
+---
+
+## The two domains
+
+| Domain | Purpose |
+|--------|---------|
+| [makx.io](https://makx.io) | Meme coin launchpad — create tokens, trade, rent liquidity |
+| [makx.finance](https://makx.finance) | DeFi lending — deposit ETH, earn yield, manage METH shares |
+
+---
+
+## Three contracts, clean separation
+
+```
+MakxYieldVault   — holds ETH, issues METH shares, lends to YieldPad
+MakxYieldPad     — manages launches, rental accounting, liquidations
+MakxYieldPadHook — Uniswap V4 hook, collects swap fees per pool
+```
+
+See [Architecture](/contracts/architecture) for the full diagram.

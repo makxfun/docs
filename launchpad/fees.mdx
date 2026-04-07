@@ -1,0 +1,74 @@
+---
+title: "Fees"
+description: "Fee structure for token creators and traders on makx.io — hook fees, LP fees, and protocol cuts."
+---
+
+## Fee overview
+
+Makx pools have two independent fee layers. Both are charged on ETH (the base currency of every pool).
+
+---
+
+## LP fee
+
+**Fixed at 0.3%** per pool, set at pool initialization and never changed. Goes entirely to liquidity providers — including the vault's LP position. The hook contract overrides this value on every swap to ensure it stays consistent.
+
+---
+
+## Hook fee
+
+Set by the token creator at launch via `hookFeeBps`. Charged as a flat bps fee on ETH on every swap:
+
+- **ETH → Token:** Deducted from ETH input before reaching the pool. Pool only sees `ethIn - hookFee`.
+- **Token → ETH:** Deducted from ETH output before the trader receives it.
+
+Hook fees accrue in `launchFeeBalance` and are claimable by the creator via `claimFees()`.
+
+The creator can update their `hookFeeBps` at any time by calling `setHookFee(launchId, newBps)`. The protocol caps the maximum at `maxHookFeeBps`.
+
+---
+
+## Protocol cuts
+
+The protocol takes a share of several actions:
+
+| Action | Parameter | Who pays |
+|--------|-----------|----------|
+| Hook fee claim | `adminFeeBps` | Token creator |
+| LP fee collection | `adminCollectLpFeeBps` | Token creator |
+| Rent deposit | `adminPayRentFeeBps` | Token creator |
+| Liquidation surplus ETH | `adminLiquidationFeeBps` | Liquidator |
+| Vault deposit | `feeBps` (vault) | Depositor |
+| Vault redeem | `feeBps` (vault) | Withdrawer |
+
+All protocol fee parameters are denominated in BPS and configurable by the protocol owner. The vault fee is capped at 1000 BPS (10%).
+
+---
+
+## Claiming fees
+
+While the launch is `Active` and **outside the grace period**:
+
+```solidity
+// Claim accumulated hook swap fees
+claimFees(uint256 launchId)
+
+// Collect Uniswap V4 LP trading fees
+collectLPFees(uint256 launchId)
+```
+
+Fee claims are blocked once the launch enters the grace period. Accrued fees are preserved during the grace period — they are not lost. Once the launch is extended past the grace period, claims resume.
+
+If the launch is liquidated without the creator reclaiming fees, all accumulated hook fees go to the liquidator.
+
+---
+
+## Rental fees
+
+Rental is not a "fee" in the traditional sense — it is the cost of borrowing ETH liquidity. See [Launch a Token](/launchpad/launch-token) for how `feePerSecond` and `bondAmount` are calculated.
+
+```
+feePerSecond = bondAmount × feeRateBps / 10_000 / annualizedBasis
+```
+
+Rental payments flow to the vault as interest, raising the share price for METH holders.

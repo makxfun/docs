@@ -1,0 +1,86 @@
+---
+title: "System Parameters"
+description: "All configurable protocol parameters for MakxYieldPad and MakxYieldVault."
+---
+
+## MakxYieldPad parameters
+
+All set via `configure()` or dedicated setters. Only the protocol owner can update these.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `feeRateBps` | `uint16` | Rental fee rate in BPS applied to `bondAmount` per time unit. Determines `feePerSecond`. |
+| `interestRatePerSecond` | `uint256` | WAD (1e18 = 100%/sec). Per-second interest rate on total bonded ETH, paid to vault. |
+| `minRentalDuration` | `uint48` | Minimum prepaid duration in seconds. Default: 2,592,000 (30 days). |
+| `minBondAmount` | `uint128` | Minimum ETH rentable per launch. |
+| `maxBondAmount` | `uint128` | Maximum ETH rentable per launch. |
+| `gracePeriod` | `uint24` | Seconds before expiry when fee claims are blocked. Default: ~3 days. |
+| `liquidationThreshold` | `uint24` | Seconds before expiry when liquidation opens. Must be ≤ `gracePeriod`. Default: ~1 day. |
+| `maxHookFeeBps` | `uint16` | Maximum hook fee a creator can set on their pool. |
+| `adminFeeBps` | `uint16` | Protocol cut on hook fee claims (`claimFees`). |
+| `adminCollectLpFeeBps` | `uint16` | Protocol cut on LP fee collections (`collectLPFees`). |
+| `adminPayRentFeeBps` | `uint16` | Protocol cut on rent deposits (`depositRent`). |
+| `adminLiquidationFeeBps` | `uint16` | Protocol cut on liquidation surplus ETH. |
+
+---
+
+## MakxYieldVault parameters
+
+Set via `configure()` and `setFeeBps()`. Only the protocol owner can update these.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `withdrawalCooldown` | `uint24` | Seconds between `requestWithdrawal()` and `redeem()`. Prevents forced emergency LP liquidations. |
+| `feeBps` | `uint256` | Protocol fee in BPS on vault deposit and redeem. Maximum 1000 (10%). |
+
+---
+
+## Rental fee formula
+
+`feeRateBps` translates to a per-second fee on `bondAmount`:
+
+```
+feePerSecond = bondAmount × feeRateBps / 10_000 / annualizedBasis
+```
+
+And `bondAmount` is derived from the rental payment:
+
+```
+bondAmount = rentalPayment / (feeRateBps × duration / 10_000)
+```
+
+---
+
+## Interest rate conversion
+
+`interestRatePerSecond` is WAD-scaled (1e18). To set a target APR:
+
+```
+interestRatePerSecond = APR_decimal × 1e18 / 31_536_000
+```
+
+Examples:
+
+| APR | interestRatePerSecond (approx) |
+|-----|-------------------------------|
+| 1% | 317,097,919 |
+| 5% | 1,585,489,600 |
+| 10% | 3,170,979,200 |
+| 20% | 6,341,958,397 |
+
+---
+
+## Grace and liquidation window
+
+The grace period and liquidation threshold define a two-stage warning system:
+
+```
+[Active] → [Grace Period] → [Liquidation Zone] → [Liquidated]
+               ^                    ^
+       prepaidUntil ≤           prepaidUntil ≤
+       now + gracePeriod        now + liquidationThreshold
+```
+
+`liquidationThreshold` must always be ≤ `gracePeriod`. The protocol enforces this constraint in `configure()` and reverts with `InvalidGracePeriod` otherwise.
+
+The gap between `gracePeriod` and `liquidationThreshold` gives the creator a window to extend rent after fee claims are blocked but before liquidation opens.

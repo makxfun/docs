@@ -1,0 +1,87 @@
+---
+title: "Launch a Token"
+description: "Step-by-step guide to launching a meme coin on makx.io using the liquidity rental model."
+---
+
+## Before you start
+
+You need ETH to cover two things:
+- **Rental payment** — pays for the minimum rental duration on your chosen bond amount.
+- **Dev buy** (optional) — ETH to buy tokens at the launch price immediately.
+
+`msg.value = rentalPayment + devBuyETH`
+
+---
+
+## Step 1 — Choose a market cap
+
+The makx.io UI lets you pick a target market cap. Behind the scenes this determines your `bondAmount` — the ETH that will back your Uniswap pool.
+
+```
+bondAmount = rentalPayment / (feeRateBps × minRentalDuration / 10_000)
+```
+
+Larger market cap → larger `bondAmount` → larger rental payment.
+
+---
+
+## Step 2 — Set your hook fee
+
+The hook fee (`hookFeeBps`) is a flat bps fee taken from every ETH swap on your pool. It accrues to you (minus a protocol cut) and is claimable at any time while your rental is active and outside the grace period.
+
+You can change `hookFeeBps` at any time after launch by calling `setHookFee()`.
+
+Maximum hook fee is capped by the protocol's `maxHookFeeBps`.
+
+---
+
+## Step 3 — Launch
+
+Call `createToken(name, symbol, duration, devBuyETH, hookFeeBps)` with the correct ETH value. Everything happens atomically:
+
+1. Token contract is deployed (gas-efficient clone, 1B supply, no mint function).
+2. Makx borrows `bondAmount` ETH from the vault.
+3. All 1B tokens + `bondAmount` ETH are added as a full-range Uniswap V4 LP position.
+4. The LP NFT is held by the MakxYieldPad contract.
+5. Your dev buy executes at the launch price.
+6. Pool is registered and hook fee takes effect immediately.
+
+---
+
+## After launch — managing your rental
+
+### Extend rent
+
+Call `depositRent(launchId)` with additional ETH at any time while you are **outside the grace period**. Extra seconds are calculated at the current `feeRateBps` on your current `bondAmount`.
+
+Extensions are blocked once you enter the grace period — you must stay ahead of it.
+
+### Repay the bond
+
+Call `repayBond(launchId)` to return borrowed ETH directly to the vault. This reduces `bondAmount`, lowers your `feePerSecond`, and reduces ongoing rent burden. If you repay the bond fully, the launch transitions to `Repaid` status — no further rent is ever owed.
+
+### Claim fees
+
+While the launch is active and outside the grace period:
+- `claimFees(launchId)` — claims accumulated hook swap fees (minus `adminFeeBps` cut).
+- `collectLPFees(launchId)` — collects Uniswap V4 LP trading fees (minus `adminCollectLpFeeBps` cut).
+
+---
+
+## Token contract properties
+
+| Property | Value |
+|----------|-------|
+| Total supply | 1,000,000,000 (fixed, no mint post-launch) |
+| Implementation | Gas-efficient clone of `MakxTokenCloneable` |
+| Tokens in pool at launch | 100% of supply |
+| Tokens held by protocol | None |
+
+---
+
+## What you earn
+
+| Fee type | When earned | Claimed via |
+|----------|-------------|-------------|
+| Hook swap fees | Every ETH swap on your pool | `claimFees()` |
+| LP trading fees | Every swap (0.3% LP fee) | `collectLPFees()` |

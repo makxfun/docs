@@ -1,0 +1,90 @@
+---
+title: "Deposit & Withdraw"
+description: "How to deposit ETH into the Makx Yield Vault and withdraw using the cooldown mechanism."
+---
+
+## Depositing ETH
+
+Call `deposit()` on `MakxYieldVault` with ETH:
+
+```solidity
+vault.deposit{ value: amount }()
+```
+
+1. The vault collects any pending interest from YieldPad — share price is updated before your deposit.
+2. Protocol `feeBps` is deducted from your ETH (if non-zero). Fee goes to protocol owner.
+3. You receive METH shares proportional to your contribution relative to `totalAssets` before the deposit.
+
+There is no minimum deposit size (beyond gas costs).
+
+---
+
+## Withdrawal process
+
+Withdrawal is a two-step process with a mandatory cooldown period. This protects against forced emergency LP liquidations and ensures the vault does not need to liquidate active positions just to service withdrawals.
+
+### Step 1 — Request withdrawal
+
+```solidity
+vault.requestWithdrawal(uint256 shares)
+```
+
+Locks in the number of shares you want to redeem. Starts the cooldown timer (`withdrawalCooldown` seconds). You can only have one active withdrawal request at a time per address.
+
+### Step 2 — Redeem after cooldown
+
+```solidity
+vault.redeem()
+```
+
+Available only after `requestedAt + withdrawalCooldown` has elapsed.
+
+1. Collects pending interest from YieldPad.
+2. Burns your shares and sends you ETH at the current share price.
+3. ETH out is **capped at the vault's idle balance** — bonded ETH is not immediately available.
+
+**Partial redemption:** If the vault has insufficient idle ETH, you receive what is available. The remainder of your request stays pending and you can call `redeem()` again later.
+
+### Cancel a pending request
+
+```solidity
+vault.cancelWithdrawal()
+```
+
+Cancels your pending withdrawal request. Your shares stay in your wallet.
+
+---
+
+## Why a cooldown?
+
+The vault lends ETH to active token launches. That ETH (`bondAmount`) is locked in Uniswap V4 LP positions and only unlocks when a launch is liquidated or the bond is repaid. If instant withdrawals were allowed, a single large depositor could force emergency liquidations of active launches — harming creators and disrupting the protocol.
+
+The cooldown gives the vault time to accumulate idle ETH organically from:
+- New deposits from other users
+- Bonds repaid by token creators
+- Interest payments (which increase share price, not idle ETH directly)
+- Liquidation proceeds
+
+---
+
+## Available vs. bonded ETH
+
+| ETH type | Available for withdrawal |
+|----------|--------------------------|
+| Idle ETH (vault balance) | Yes, immediately after cooldown |
+| Bonded ETH (lent to launches) | No — unlocks only on repayment or liquidation |
+
+Check idle ETH: `address(vault).balance`
+Check bonded ETH: `vault.totalBondedETH()`
+Check total assets: `vault.totalAssets()` (both combined)
+
+---
+
+## Protocol fee on deposit and redeem
+
+The vault's `feeBps` (max 1000 = 10%) is deducted from both deposits and redemptions. The fee goes to the protocol owner. Fee of 0 is also valid (no fee).
+
+```
+ethIn after fee  = msg.value × (10_000 - feeBps) / 10_000
+ethOut after fee = grossEthOut × (10_000 - feeBps) / 10_000
+```

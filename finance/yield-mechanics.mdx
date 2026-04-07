@@ -1,0 +1,97 @@
+---
+title: "Yield Mechanics"
+description: "How interest accrues on bonded ETH and flows back to METH holders in the Makx Yield Vault."
+---
+
+## Interest accrual
+
+MakxYieldPad accrues interest continuously on all outstanding bonded ETH using a per-second interest rate:
+
+```
+pending = elapsed × interestRatePerSecond × totalBondedETH / 1e18
+```
+
+- `elapsed` — seconds since the last interest collection.
+- `interestRatePerSecond` — WAD-denominated rate set by the protocol owner (1e18 = 100% per second; typical values are far smaller).
+- `totalBondedETH` — total ETH currently lent out across all active launches.
+
+This calculation is purely accounting — it does not require any per-block transactions. The `lastInterestTimestamp` is updated whenever `collectInterest()` is called.
+
+---
+
+## Interest collection
+
+Anyone can call `collectInterest()` on MakxYieldPad to push accrued interest to the vault:
+
+```solidity
+yieldPad.collectInterest()
+```
+
+The vault also calls this automatically before every deposit and redemption — ensuring share price is always current before any shares are minted or burned.
+
+When interest arrives at the vault:
+- `address(vault).balance` increases (idle ETH goes up)
+- `totalBondedETH` stays the same
+- `totalAssets = balance + totalBondedETH` increases
+- `sharePrice = totalAssets / totalSupply` increases
+- Every METH holder's position appreciates
+
+---
+
+## Interest vs. rental fees
+
+These are the same economic flow, viewed from different sides:
+
+| Perspective | Term | Recipient |
+|-------------|------|-----------|
+| Token creator | Rental payment | Protocol / vault |
+| Vault depositor | Interest income | METH holders (via share price) |
+
+When a creator calls `depositRent(launchId)`, the ETH flows to the protocol. YieldPad accrues that obligation as `accruedInterest` and pays it into the vault via `collectInterest()`. The vault's idle balance grows, raising the share price.
+
+---
+
+## What drives yield
+
+Yield for METH holders depends on:
+
+1. **Volume of active launches** — More tokens launched = more ETH bonded = more interest accruing.
+2. **Bond sizes** — Larger market cap launches rent more ETH, contributing more to `totalBondedETH`.
+3. **Rental duration** — Longer rental periods mean more continuous interest flow.
+4. **Interest rate** — The `interestRatePerSecond` set by the protocol owner determines the annual yield rate.
+
+---
+
+## Bond principal safety
+
+The yield mechanism is built on a mathematically guaranteed principal floor:
+
+- The vault lends `bondAmount` to each launch.
+- That ETH goes into a Uniswap V4 full-range LP position.
+- Buyers must deposit ETH to receive tokens; sellers must return tokens to get ETH.
+- The vault's LP position captures all ETH net flow. On withdrawal, recovery ≥ bondAmount always.
+
+```
+Recovery ≥ bondAmount because:
+  Pool ETH = bondAmount + net buyer deposits
+  Net buyer deposits ≥ 0
+```
+
+The vault cannot lose bond principal through any trading activity, dev dumps, or token failure. The only systemic risk is smart contract bugs — mitigated by fixed supply (no mint), locked LP NFT (no transfer), and full-range positions (no concentrated range drain).
+
+---
+
+## Interest rate parameter
+
+`interestRatePerSecond` is a WAD (1e18 scale). To convert APR to per-second rate:
+
+```
+interestRatePerSecond = APR_in_bps × 1e18 / 10_000 / 31_536_000
+```
+
+For example, 5% APR:
+```
+0.05 × 1e18 / 31_536_000 ≈ 1,585,489,600
+```
+
+The owner can adjust this rate via `configure()` without affecting the bond principal guarantee.

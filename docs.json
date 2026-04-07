@@ -11,39 +11,39 @@
   "navigation": {
     "groups": [
       {
-        "group": "Getting Started",
+        "group": "Overview",
         "pages": [
-          "index",
-          "launches",
-          "trading"
+          "index"
         ]
       },
       {
-        "group": "Features",
+        "group": "makx.io — Launchpad",
         "pages": [
-          "prepool",
-          "token-identity",
-          "fees"
+          "launchpad/overview",
+          "launchpad/launch-token",
+          "launchpad/trading",
+          "launchpad/fees",
+          "launchpad/token-lifecycle",
+          "launchpad/liquidations"
         ]
       },
       {
-        "group": "AI Agents",
+        "group": "makx.finance — Lending & Yield",
         "pages": [
-          "agent-launcher",
-          "agent-strategies"
+          "finance/overview",
+          "finance/meth",
+          "finance/deposit-withdraw",
+          "finance/yield-mechanics"
         ]
       },
       {
         "group": "Contracts",
         "pages": [
-          "docs/launch-factory",
-          "docs/bonding-curve",
-          "docs/prepool",
-          "docs/launch-token",
-          "docs/token-ens",
-          "docs/makx-domains-frontend",
-          "docs/makx-domains-contracts",
-          "docs/curve-lib"
+          "contracts/architecture",
+          "contracts/makx-yield-vault",
+          "contracts/makx-yield-pad",
+          "contracts/makx-yield-pad-hook",
+          "contracts/parameters"
         ]
       }
     ]

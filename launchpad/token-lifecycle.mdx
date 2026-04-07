@@ -1,0 +1,112 @@
+---
+title: "Token Lifecycle"
+description: "The full state machine for a Makx launch — Active, Grace Period, Liquidation Zone, and final states."
+---
+
+## Launch states
+
+Every Makx launch moves through a time-based state machine determined by `prepaidUntil` — the timestamp up to which rent has been prepaid.
+
+```
+                  ┌──────────────────┐
+                  │  Dev pays rental │
+                  │  (min duration)  │
+                  └────────┬─────────┘
+                           ▼
+                  ┌──────────────────┐
+                  │     ACTIVE       │
+                  │  Rental prepaid  │◄── depositRent() or repayBond()
+                  │  LP earning fees │
+                  └────────┬─────────┘
+                           │
+            prepaidUntil ≤ now + gracePeriod
+                           ▼
+                  ┌──────────────────┐
+                  │  GRACE PERIOD    │
+                  │  Fee claims      │◄── depositRent() to push prepaidUntil forward
+                  │  blocked         │
+                  └────────┬─────────┘
+                           │
+       prepaidUntil ≤ now + liquidationThreshold
+                           ▼
+                  ┌──────────────────┐
+                  │ LIQUIDATION ZONE │
+                  │ Anyone may call  │
+                  │ liquidate()      │
+                  └────────┬─────────┘
+                           ▼
+                  ┌──────────────────┐
+                  │   LIQUIDATED     │
+                  │  LP withdrawn    │
+                  │  Bond repaid     │
+                  │  Surplus + fees  │
+                  │  → liquidator    │
+                  └──────────────────┘
+
+  Alternatively:
+  repayBond() until bondAmount = 0 → REPAID (no more rent ever owed)
+```
+
+---
+
+## Phase 1 — Active
+
+The launch is active when `prepaidUntil > block.timestamp + gracePeriod`.
+
+What you can do:
+- **Trade** — pool is fully active on Uniswap V4.
+- **Claim fees** — `claimFees()` and `collectLPFees()` are available.
+- **Extend** — `depositRent(launchId)` adds more prepaid seconds at the current `feeRateBps`.
+- **Repay bond** — `repayBond(launchId)` reduces `bondAmount` and lowers `feePerSecond`.
+
+---
+
+## Phase 2 — Grace Period
+
+Entered when `prepaidUntil ≤ block.timestamp + gracePeriod`.
+
+- Fee claims (`claimFees`, `collectLPFees`) are **blocked**. Accrued fees are preserved, not lost.
+- Rent extensions (`depositRent`) are still allowed — the creator must push `prepaidUntil` far enough forward to exit the grace period.
+- Liquidation is not yet available.
+
+---
+
+## Phase 3 — Liquidation Zone
+
+Entered when `prepaidUntil ≤ block.timestamp + liquidationThreshold`.
+
+`liquidationThreshold` is always ≤ `gracePeriod`. Once inside this zone, any address may call `liquidate(launchId)`.
+
+The liquidation zone is a subset of the grace period — fee claims remain blocked.
+
+---
+
+## Phase 4 — Liquidated
+
+`liquidate()` was called. The protocol:
+
+1. Withdraws the LP NFT from Uniswap V4 — receives ETH and tokens.
+2. Repays `bondAmount` ETH to the vault.
+3. Sends surplus ETH (above bond) to the liquidator, minus `adminLiquidationFeeBps`.
+4. Sends all accumulated hook fees to the liquidator.
+5. Sends all recovered tokens to the liquidator.
+6. Sets launch status to `Liquidated`.
+
+See [Liquidations](/launchpad/liquidations) for incentive details.
+
+---
+
+## Phase 5 — Repaid (alternative terminal state)
+
+If the creator calls `repayBond()` enough times to reduce `bondAmount` to zero, the launch transitions to `Repaid`. No further rent is owed. The LP remains active but the vault no longer has exposure — the position is now fully the creator's.
+
+---
+
+## Key timestamps
+
+| Variable | Meaning |
+|----------|---------|
+| `prepaidUntil` | Timestamp through which rent is prepaid |
+| `gracePeriod` | Seconds before expiry when fee claims freeze |
+| `liquidationThreshold` | Seconds before expiry when liquidation opens (≤ gracePeriod) |
+| `minRentalDuration` | Minimum seconds that must be prepaid at launch |

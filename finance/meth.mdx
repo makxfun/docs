@@ -1,0 +1,81 @@
+---
+title: "METH — Makx ETH"
+description: "METH is the ERC-20 yield-bearing vault share token issued by the Makx Yield Vault."
+---
+
+## What is METH?
+
+METH (Makx ETH) is the ERC-20 share token issued by `MakxYieldVault` when you deposit ETH. It is a yield-bearing token — holding METH means your underlying ETH is actively earning yield from liquidity rentals.
+
+METH is not a rebasing token. The token balance you hold stays constant. Instead, the **ETH value per METH share increases** as interest accumulates in the vault.
+
+---
+
+## Share price mechanics
+
+```
+sharePrice  = totalAssets × 1e18 / totalSupply
+totalAssets = address(vault).balance + totalBondedETH
+```
+
+- `address(vault).balance` — idle ETH sitting in the vault, available for new deposits, withdrawals, and lending.
+- `totalBondedETH` — accounting marker for ETH currently lent out to token launches. Not physically in the vault but contractually backed by the LP positions.
+
+As YieldPad calls `collectInterest()` and sends ETH back to the vault, `totalAssets` grows and `sharePrice` rises.
+
+---
+
+## Minting METH
+
+Calling `deposit()` on `MakxYieldVault`:
+
+1. `collectInterest()` is called on YieldPad first — ensuring share price is current before you dilute.
+2. Any protocol `feeBps` is deducted from the incoming ETH.
+3. Shares are minted proportional to pre-deposit `totalAssets` — you receive a fair share.
+
+```
+shares = ethIn × totalSupply / priorTotalAssets
+```
+
+---
+
+## Burning METH
+
+Calling `redeem()` after the cooldown period:
+
+1. `collectInterest()` is called — share price is refreshed.
+2. Your shares are burned.
+3. You receive ETH proportional to `shares / totalSupply × totalAssets`.
+
+Redemptions are capped at available idle ETH. If `bondedETH` is still deployed in active launches, it is not immediately available — only idle ETH can be withdrawn. A partial redemption is possible if idle balance is lower than your full entitlement.
+
+---
+
+## METH vs. other yield tokens
+
+| Property | METH |
+|----------|------|
+| Standard | ERC-20 (not ERC-4626) |
+| Yield source | Rental interest from memecoin launches |
+| Rebasing | No — share price appreciates, balance stays fixed |
+| Withdrawal | Cooldown required before redemption |
+| Principal guarantee | Backed by AMM math — bond always recoverable |
+| Transferable | Yes — standard ERC-20 transfer |
+
+---
+
+## Checking your position
+
+```solidity
+// Current share price (ETH per METH, scaled 1e18)
+vault.sharePrice()
+
+// Your METH balance
+meth.balanceOf(address)
+
+// Total vault assets
+vault.totalAssets()
+
+// ETH currently lent out to launches
+vault.totalBondedETH()
+```

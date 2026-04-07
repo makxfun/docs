@@ -1,0 +1,187 @@
+---
+title: "MakxYieldPad"
+description: "Contract reference for MakxYieldPad — the launch manager, rental engine, and interest accrual layer."
+---
+
+## Overview
+
+`MakxYieldPad` is the core orchestrator of the Makx protocol. It borrows ETH from `MakxYieldVault` for each token launch, manages Uniswap V4 LP positions, tracks rental state per launch, accrues interest on outstanding bonds, and handles liquidations.
+
+---
+
+## Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `TOTAL_TOKEN_SUPPLY` | `1_000_000_000 ether` | Fixed supply for every launched token |
+| `TICK_SPACING` | `60` | Uniswap V4 tick spacing for all pools |
+
+---
+
+## Launch state
+
+Each launch is stored in a `LaunchConfig` struct:
+
+```solidity
+struct LaunchConfig {
+    address token;
+    address creator;
+    uint256 bondAmount;
+    uint256 lpTokenId;
+    uint256 feePerSecond;
+    uint256 launchFeeBalance;    // Accumulated hook fees
+    uint256 totalEthFees;        // Lifetime ETH fees
+    uint256 totalTokenFees;      // Lifetime token fees
+    bytes32 poolId;
+    uint48 launchBlock;
+    uint48 launchTimestamp;
+    uint48 prepaidUntil;
+    uint16 hookFeeBps;
+    Status status;               // Active | Liquidated | Repaid
+}
+```
+
+Lookups:
+- `launches[launchId]` — by numeric ID
+- `tokenToLaunchId[tokenAddress]` — by token address
+- `poolIdToLaunchId[poolId]` — by Uniswap pool ID
+
+---
+
+## Creator functions
+
+### `createToken()`
+```solidity
+function createToken(
+    string memory name,
+    string memory symbol,
+    uint48 duration,
+    uint256 devBuyETH,
+    uint16 hookFeeBps_
+) external payable returns (uint256 launchId)
+```
+Launches a new token. `msg.value = rentalPayment + devBuyETH`. Borrows `bondAmount` from vault, mints 1B tokens, creates full-range Uniswap V4 LP, executes dev buy. `duration` must be ≥ `minRentalDuration`.
+
+### `depositRent(uint256 launchId)`
+```solidity
+function depositRent(uint256 launchId) external payable
+```
+Extends rental by paying additional ETH. Blocked in the grace period. `adminPayRentFeeBps` is deducted.
+
+### `repayBond(uint256 launchId)`
+```solidity
+function repayBond(uint256 launchId) external payable
+```
+Repays a portion of the outstanding bond, reducing `bondAmount` and `feePerSecond`. If `bondAmount` reaches zero, status transitions to `Repaid`.
+
+### `claimFees(uint256 launchId)`
+```solidity
+function claimFees(uint256 launchId) external
+```
+Claims accumulated hook swap fees to the creator. Blocked in grace period. `adminFeeBps` cut goes to protocol.
+
+### `collectLPFees(uint256 launchId)`
+```solidity
+function collectLPFees(uint256 launchId) external
+```
+Collects Uniswap V4 LP trading fees to the creator. Blocked in grace period. `adminCollectLpFeeBps` cut goes to protocol.
+
+### `setHookFee(uint256 launchId, uint16 bps)`
+```solidity
+function setHookFee(uint256 launchId, uint16 bps) external
+```
+Updates the hook fee for this launch. Caller must be the creator. Capped at `maxHookFeeBps`.
+
+---
+
+## Liquidation
+
+### `liquidate(uint256 launchId)`
+```solidity
+function liquidate(uint256 launchId) external
+```
+Permissionless. Available when `status == Active` AND `prepaidUntil ≤ block.timestamp + liquidationThreshold`.
+
+Sequence:
+1. Withdraw LP NFT → receive ETH + tokens
+2. Repay `bondAmount` to vault
+3. Send surplus ETH to liquidator (minus `adminLiquidationFeeBps`)
+4. Send `launchFeeBalance` to liquidator
+5. Send all tokens to liquidator
+6. Set `status = Liquidated`
+
+---
+
+## Interest accrual
+
+### `collectInterest()`
+```solidity
+function collectInterest() external
+```
+Pushes accrued interest to the vault. Callable by anyone. The vault calls this automatically before every deposit and redemption.
+
+Interest formula:
+```
+pending = elapsed × interestRatePerSecond × totalBondedETH / 1e18
+```
+
+---
+
+## Hook interface
+
+### `getPoolConfig(bytes32 poolId)`
+```solidity
+function getPoolConfig(bytes32 poolId) external view returns (uint16 hookFeeBps)
+```
+Returns the hook fee for a pool. Called by the hook on every swap.
+
+### `recordHookFee(bytes32 poolId, uint256 amount)`
+```solidity
+function recordHookFee(bytes32 poolId, uint256 amount) external
+```
+Called by the hook to record a fee collection. Only callable by the hook address.
+
+---
+
+## Owner configuration
+
+### `configure(...)`
+Sets hook address, `minRentalDuration`, `adminFeeBps`, `maxHookFeeBps`, `gracePeriod`, `liquidationThreshold`, `minBondAmount`, `maxBondAmount`, and `interestRatePerSecond`.
+
+### `setFeeRate(uint16 _feeRateBps)`
+Updates the rental fee rate.
+
+### `setAdminFees(uint16 lpFeeBps, uint16 rentFeeBps, uint16 liquidationFeeBps)`
+Updates the three non-hook admin fee parameters.
+
+---
+
+## Events
+
+| Event | Emitted when |
+|-------|-------------|
+| `TokenLaunched` | New token created |
+| `RentalExtended` | Rent deposited |
+| `FeesClaimed` | Hook fees claimed by creator |
+| `LPFeesCollected` | LP fees collected |
+| `Liquidated` | Launch liquidated |
+| `HookFeeReceived` | Hook fee recorded |
+| `HookFeeUpdated` | Creator changed hook fee |
+| `BondRepaid` | Bond partially or fully repaid |
+| `InterestCollected` | Interest pushed to vault |
+| `FeeRateUpdated` | Rental fee rate changed |
+
+---
+
+## Key errors
+
+| Error | Condition |
+|-------|-----------|
+| `InsufficientPayment` | `msg.value` too low for rental duration |
+| `BondAmountOutOfRange` | `bondAmount` outside `[minBond, maxBond]` |
+| `InvalidDuration` | `duration < minRentalDuration` |
+| `NotLiquidatable` | Not yet in liquidation zone |
+| `InGracePeriod` | Action blocked during grace period |
+| `InLiquidationZone` | `depositRent` blocked (already liquidatable) |
+| `NotCreator` | Caller is not the launch creator |
+| `HookFeeTooHigh` | `hookFeeBps > maxHookFeeBps` |

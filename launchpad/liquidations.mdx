@@ -1,0 +1,77 @@
+---
+title: "Liquidations"
+description: "How Makx liquidations work — who can liquidate, what they earn, and why bond principal is always safe."
+---
+
+## What is a liquidation?
+
+When a token creator stops paying rent and the launch crosses the `liquidationThreshold`, any address can call `liquidate(launchId)`. This closes the position, repays the vault, and distributes remaining value to the liquidator.
+
+Liquidation is **permissionless** — no special role required, no whitelist. Anyone who calls it first gets the reward.
+
+---
+
+## Liquidator reward
+
+The liquidator receives:
+
+1. **Surplus ETH** — All ETH in the LP above `bondAmount`, minus `adminLiquidationFeeBps` protocol cut.
+2. **Accumulated hook fees** — All creator hook fees that were locked during the grace period.
+3. **All pool tokens** — Every token recovered from the LP withdrawal.
+
+The more trading activity a pool had before expiry, the more ETH surplus and tokens the liquidator earns.
+
+---
+
+## Liquidation process
+
+```solidity
+liquidate(uint256 launchId)
+```
+
+1. Validates: `status == Active` AND `prepaidUntil ≤ block.timestamp + liquidationThreshold`.
+2. Withdraws the LP NFT from Uniswap V4 — YieldPad receives ETH and tokens.
+3. Sends `bondAmount` ETH back to the vault via `vault.repay()`.
+4. Sends surplus ETH (ETH recovered − bondAmount) to liquidator, minus protocol cut.
+5. Sends `launchFeeBalance` (hook fees) to liquidator.
+6. Sends all recovered tokens to liquidator.
+7. Sets `status = Liquidated`.
+
+---
+
+## Why bond principal is always safe
+
+The vault's LP position holds 100% of the initial ETH liquidity and 100% of the token supply at launch. Because tokens can only enter the pool by depositing ETH (via buys), the ETH in the pool can only be greater than or equal to `bondAmount`:
+
+```
+Pool ETH = bondAmount + net buyer deposits
+Net buyer deposits ≥ 0
+→ Recovery ≥ bondAmount always
+```
+
+Every token a buyer holds represents ETH they deposited into the pool. If they haven't sold yet, that ETH is still in the pool. When liquidation withdraws the LP, the vault recovers all of it.
+
+This guarantee holds regardless of token price, dev dumps, or trading activity. The only way it could fail is if unbacked tokens entered the system — prevented by the fixed 1B supply with no mint function.
+
+---
+
+## Why liquidate?
+
+The incentive scales with how well a token performed. A popular token with significant trading volume accumulates:
+
+- ETH surplus from buyers who haven't sold (ETH in pool > bondAmount)
+- Hook fees from every swap
+
+A token with zero trading has minimal surplus but still has all the tokens — which may have speculative value.
+
+Liquidators effectively run a cleanup service that also earns them the "residual value" of expired launches.
+
+---
+
+## Preventing liquidation
+
+As the creator, you prevent liquidation by staying out of the grace period:
+
+- Call `depositRent(launchId)` to extend `prepaidUntil` before entering the grace period.
+- Call `repayBond(launchId)` to reduce your bond and lower your ongoing `feePerSecond`.
+- Fully repay the bond (`repayBond` until `bondAmount = 0`) to reach `Repaid` status — no more rent required.

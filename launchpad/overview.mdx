@@ -1,0 +1,53 @@
+---
+title: "makx.io — Launchpad Overview"
+description: "Launch meme coins on Uniswap V4 with real liquidity from block one. No bonding curve. No migration."
+---
+
+## What is makx.io?
+
+makx.io is the meme coin launchpad face of the Makx protocol. Token creators launch directly onto Uniswap V4 — in a single transaction — using liquidity rented from the Makx Yield Vault. There is no bonding curve and no migration step.
+
+---
+
+## How a launch works
+
+1. A creator selects a target market cap. The UI derives the required rental payment.
+2. The creator calls `createToken()` with their rental payment plus an optional dev buy amount.
+3. Makx borrows that ETH value from the vault as `bondAmount`.
+4. 1,000,000,000 tokens are minted and added to a Uniswap V4 full-range pool together with the borrowed ETH.
+5. The creator's dev buy executes immediately at the launch price.
+6. The pool is live. Trading starts at block one.
+
+**One transaction. No curve. No wait.**
+
+---
+
+## The rental model
+
+Liquidity is not owned — it is rented. The creator pays a continuous per-second fee for the ETH that backs their pool. At launch they prepay a minimum rental duration (30 days by default). As long as rent is current, the pool stays active and trading fees flow to the creator.
+
+If the creator stops paying rent:
+- A grace period begins, blocking fee claims.
+- When the launch crosses the liquidation threshold, anyone can liquidate.
+
+See [Token Lifecycle](/launchpad/token-lifecycle) for the full state machine.
+
+---
+
+## Who benefits
+
+| Role | What they get |
+|------|--------------|
+| **Token creator** | Instant deep Uniswap V4 liquidity without owning the ETH. Earns hook fees and LP trading fees. |
+| **Traders** | Real liquidity on Uniswap V4 from block one. No cliff, no curve. Full-range LP means no dead zones. |
+| **Liquidators** | Earn surplus ETH, accumulated hook fees, and all pool tokens when a launch expires without renewal. |
+
+---
+
+## Key properties
+
+- Fixed supply of **1,000,000,000 tokens** per launch. No minting after creation.
+- All tokens enter the Uniswap pool at launch — none are held back.
+- Full-range liquidity only — no concentrated position risk.
+- LP NFT is held by the protocol contract and cannot be transferred by anyone except through the recovery mechanism.
+- Bond principal is **mathematically guaranteed** to be recoverable. See [Architecture](/contracts/architecture).

@@ -1,0 +1,113 @@
+---
+title: "Architecture"
+description: "Three-contract architecture of the Makx protocol — clean separation between vault, launch manager, and hook."
+---
+
+## Overview
+
+Makx is composed of three contracts with non-overlapping responsibilities:
+
+```
+MakxYieldVault   — holds ETH, issues METH shares, lends to YieldPad
+MakxYieldPad     — manages launches, rental accrual, liquidations
+MakxYieldPadHook — stateless Uniswap V4 hook, swap-level fee logic only
+```
+
+No contract has a back door to another's core state. The vault only lends to YieldPad. The hook holds no funds and no rental state. YieldPad owns all interest math and pays the vault.
+
+---
+
+## Contract diagram
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                   MakxYieldVault (ERC-20)                │
+│                                                          │
+│  DEPOSITORS:                                             │
+│  ├── deposit() → METH shares                             │
+│  ├── requestWithdrawal(shares) → start cooldown          │
+│  ├── cancelWithdrawal()                                  │
+│  └── redeem() → ETH (after cooldown)                     │
+│                                                          │
+│  LENDING (only YieldPad):                                │
+│  ├── borrow(amount) → send ETH to YieldPad               │
+│  └── repay() → receive ETH back from YieldPad            │
+│                                                          │
+│  ASSETS:                                                 │
+│  ├── idle ETH balance                                    │
+│  └── totalBondedETH (accounting, lent to YieldPad)       │
+└──────────────────────────┬───────────────────────────────┘
+                           │ borrow / repay / collectInterest
+┌──────────────────────────▼───────────────────────────────┐
+│                   MakxYieldPad                           │
+│                                                          │
+│  FACTORY:                                                │
+│  └── createToken(name, symbol, duration, devBuyETH,      │
+│        hookFeeBps) → mint → full LP → devBuy             │
+│                                                          │
+│  RENTAL:                                                 │
+│  ├── depositRent(launchId)                               │
+│  ├── repayBond(launchId)                                 │
+│  ├── liquidate(launchId)                                 │
+│  ├── claimFees(launchId) — hook fees to creator          │
+│  ├── collectLPFees(launchId) — LP fees to creator        │
+│  └── setHookFee(launchId, bps)                           │
+│                                                          │
+│  INTEREST:                                               │
+│  ├── _accrueInterest() — internal, per-second accrual    │
+│  └── collectInterest() — push interest to vault          │
+│                                                          │
+│  STATE (per launch):                                     │
+│  ├── token, creator, bondAmount, lpTokenId               │
+│  ├── feePerSecond, prepaidUntil, hookFeeBps              │
+│  ├── launchFeeBalance, status (Active/Liquidated/Repaid) │
+│  └── poolId, launchBlock, launchTimestamp                │
+└──────────────────────────┬───────────────────────────────┘
+                           │ getPoolConfig / recordHookFee
+┌──────────────────────────▼───────────────────────────────┐
+│              MakxYieldPadHook (V4 Hook)                  │
+│                                                          │
+│  ├── beforeSwap — hook fee on ETH→token (input side)     │
+│  └── afterSwap  — hook fee on token→ETH (output side)    │
+│                                                          │
+│  NO funds. NO rental state. Swap-level fee logic only.   │
+│  Required address suffix: 0xCC                           │
+└──────────────────────────────────────────────────────────┘
+            │                        │
+            ▼                        ▼
+   ┌─────────────────┐    ┌──────────────────┐
+   │  Uniswap V4     │    │  Token Contracts  │
+   │  Pool Manager   │    │  (MakxToken-      │
+   │  + Position     │    │   Cloneable,      │
+   │  Manager        │    │   1B supply,      │
+   └─────────────────┘    │   No Mint)        │
+                          └──────────────────┘
+```
+
+---
+
+## Key design decisions
+
+### Vault has no interest logic
+
+All interest math lives in YieldPad. The vault exposes a simple `repay()` payable function and a `totalBondedETH` accounting marker. This keeps the vault minimal and auditable.
+
+### Hook is stateless
+
+The hook reads config from YieldPad (one `getPoolConfig` call per swap) and records fees via `recordHookFee`. It holds no ETH, no state, and no LP positions. This minimizes attack surface on the hook address — which is deterministic and must end in `0xCC`.
+
+### LP NFT is locked
+
+YieldPad holds the LP NFT for every launch. There is no admin function to transfer it outside of the liquidation/repayment recovery mechanism. An NFT that cannot be moved cannot be stolen.
+
+### Fixed token supply
+
+`MakxTokenCloneable` has no mint function after deployment. Supply is permanently fixed at 1,000,000,000 tokens. This is a prerequisite for the bond principal guarantee — unbacked tokens cannot dilute the ETH backing.
+
+---
+
+## Bond principal guarantee (summary)
+
+At launch, `bondAmount` ETH + 1B tokens enter the pool. Tokens exit only when buyers deposit ETH. ETH exits only when sellers return tokens. The vault's LP position tracks all ETH. On withdrawal: recovery ≥ bondAmount, always.
+
+The full mathematical argument is in [Yield Mechanics](/finance/yield-mechanics).

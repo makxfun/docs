@@ -1,0 +1,128 @@
+---
+title: "MakxYieldVault"
+description: "Contract reference for MakxYieldVault — the ETH lending pool that issues METH shares."
+---
+
+## Overview
+
+`MakxYieldVault` is an ERC-20 contract that holds ETH and lends it to `MakxYieldPad`. Depositors receive METH shares. YieldPad borrows ETH for token launches and pays interest back. Interest raises the share price, benefiting all depositors proportionally.
+
+All interest accrual logic is owned by YieldPad — the vault simply receives ETH via `repay()` and `depositInterest()`.
+
+---
+
+## State
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `yieldPad` | `address` | Address of the authorized MakxYieldPad |
+| `totalBondedETH` | `uint256` | ETH currently lent out (accounting marker, not physical balance) |
+| `withdrawalCooldown` | `uint24` | Seconds between withdrawal request and redemption |
+| `feeBps` | `uint256` | Protocol fee in BPS on deposit and redeem (max 1000) |
+| `withdrawalRequests` | `mapping(address => WithdrawalRequest)` | Pending withdrawal requests |
+
+```solidity
+struct WithdrawalRequest {
+    uint256 shares;
+    uint48 requestedAt;
+}
+```
+
+---
+
+## Depositor functions
+
+### `deposit()`
+```solidity
+function deposit() external payable returns (uint256 shares)
+```
+Deposit ETH, receive METH shares. Calls `collectInterest()` on YieldPad first. Deducts `feeBps` if non-zero.
+
+### `requestWithdrawal(uint256 shares)`
+```solidity
+function requestWithdrawal(uint256 shares) external
+```
+Starts the withdrawal cooldown. One active request per address.
+
+### `cancelWithdrawal()`
+```solidity
+function cancelWithdrawal() external
+```
+Cancels a pending withdrawal request.
+
+### `redeem()`
+```solidity
+function redeem() external nonReentrant returns (uint256 ethOut)
+```
+After cooldown: burns shares, sends ETH. Capped at idle vault balance — partial redemption possible. Deducts `feeBps` from output.
+
+---
+
+## Lending interface (YieldPad only)
+
+### `borrow(uint256 amount)`
+```solidity
+function borrow(uint256 amount) external onlyYieldPad
+```
+Lends ETH to YieldPad. Increments `totalBondedETH`. Reverts if `amount > address(this).balance`.
+
+### `repay()`
+```solidity
+function repay() external payable onlyYieldPad
+```
+Receives ETH back from YieldPad (bond repayment or interest). Decrements `totalBondedETH` by `msg.value`.
+
+---
+
+## View functions
+
+### `totalAssets()`
+```solidity
+function totalAssets() public view returns (uint256)
+```
+Returns `address(this).balance + totalBondedETH`. This is the full ETH value backing all METH shares.
+
+### `sharePrice()`
+```solidity
+function sharePrice() external view returns (uint256)
+```
+Returns ETH per METH share, scaled by 1e18. Returns `1e18` if supply is zero.
+
+---
+
+## Owner functions
+
+### `configure(address _yieldPad, uint24 _withdrawalCooldown)`
+Sets the authorized YieldPad address and withdrawal cooldown.
+
+### `setFeeBps(uint256 _feeBps)`
+Sets the protocol fee on deposit/redeem. Capped at 1000 (10%).
+
+---
+
+## Events
+
+| Event | Emitted when |
+|-------|-------------|
+| `Deposited(user, ethAmount, shares)` | ETH deposited |
+| `WithdrawalRequested(user, shares, requestedAt)` | Withdrawal request started |
+| `WithdrawalCancelled(user)` | Request cancelled |
+| `Redeemed(user, shares, ethOut)` | Shares redeemed for ETH |
+| `Borrowed(amount)` | ETH lent to YieldPad |
+| `Repaid(amount)` | ETH returned from YieldPad |
+| `FeeBpsUpdated(feeBps)` | Protocol fee updated |
+
+---
+
+## Errors
+
+| Error | Condition |
+|-------|-----------|
+| `ZeroAmount` | Zero ETH deposit or zero shares |
+| `InsufficientShares` | Caller has fewer shares than requested |
+| `InsufficientAvailableETH` | Vault idle balance too low to lend |
+| `NoWithdrawalPending` | No active request to redeem or cancel |
+| `CooldownNotElapsed` | Cooldown period not yet passed |
+| `NotYieldPad` | Caller is not the authorized YieldPad |
+| `TransferFailed` | ETH transfer reverted |
+| `FeeTooHigh` | `feeBps` > 1000 |
