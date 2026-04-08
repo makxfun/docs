@@ -17,7 +17,7 @@
         ]
       },
       {
-        "group": "makx.io — Launchpad",
+        "group": "makx.io",
         "pages": [
           "launchpad/overview",
           "launchpad/launch-token",
@@ -28,7 +28,7 @@
         ]
       },
       {
-        "group": "makx.finance — Lending & Yield",
+        "group": "makx.finance",
         "pages": [
           "finance/overview",
           "finance/meth",

@@ -1,5 +1,5 @@
 ---
-title: "makx.finance — Lending & Yield Overview"
+title: "Lending & Yield Overview"
 description: "Deposit ETH into the Makx Yield Vault, earn interest as your capital is rented to meme coin launches."
 ---
 
@@ -8,6 +8,20 @@ description: "Deposit ETH into the Makx Yield Vault, earn interest as your capit
 makx.finance is the DeFi lending side of the Makx protocol. The Makx Yield Vault accepts ETH deposits and lends that ETH to token launches on makx.io as `bondAmount` — the base liquidity that backs each pool.
 
 In return, the vault earns continuous per-second interest paid by MakxYieldPad on all outstanding bonds. That interest raises the share price of METH — the vault's ERC-20 share token.
+
+---
+
+## Principal safety
+
+**Can the Liquidity be Rugged or Tokens Dumped to drain Borrowed ETH?**
+
+Any ETH provided as liquidity is mathematically guaranteed to be recoverable to at least Full Amount:
+
+- The vault is the only ETH liquidity provider at each launch. All tokens minted (Entire fixed Supply) are paired with borrowed ETH, so the only means to have any tokens is to buy from the Liquidity Pool. All acts of dumping , Rug pulls etc are simple sell operations returning previously purchased ETH to the Pool and generating protocal Fees.
+- Buyers must deposit ETH to receive tokens; sellers must return tokens to receive ETH.
+- On liquidation or bond repayment, the vault always recovers at least `bondAmount`.
+
+See [Yield Mechanics](/finance/yield-mechanics) for the full explanation.
 
 ---
 
@@ -35,18 +49,6 @@ METH is a **yield-bearing token** — you don't need to stake or claim separatel
 | Hook swap fees | Go to token creators, not the vault directly. |
 
 The vault's single source of yield is **interest from lending ETH to token launches**. No staking, no governance incentives, no emissions.
-
----
-
-## Principal safety
-
-Your ETH principal (the `bondAmount` portion) is mathematically guaranteed to be recoverable:
-
-- The vault is the only ETH liquidity provider at each launch.
-- Buyers must deposit ETH to receive tokens; sellers must return tokens to receive ETH.
-- On liquidation or bond repayment, the vault always recovers at least `bondAmount`.
-
-See [Yield Mechanics](/finance/yield-mechanics) for the full explanation.
 
 ---
 
